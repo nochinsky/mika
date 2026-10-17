@@ -1,0 +1,8 @@
+/build*/
+/.pi/
+*.gguf
+*.part*
+__pycache__/
+/.vcpkg-cache/
+/stage/
+/dist/

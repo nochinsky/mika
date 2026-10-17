@@ -57,7 +57,11 @@ else:
     root = Path(os.environ['LOCALAPPDATA']) / 'Mika/app'
     if root.exists():
         raise RuntimeError('Expected a clean Windows runner without an existing Mika installation')
-    env = {**os.environ, 'MIKA_ARCHIVE_PATH': str(args.archive)}
+    # PowerShell 7 sanitizes PSModulePath when launching Windows PowerShell 5.1
+    # directly. A Python intermediary must do the same, or 5.1 finds PS7-only
+    # module versions instead of its own inbox Get-FileHash/Expand-Archive.
+    env = {key: value for key, value in os.environ.items() if key.upper() != 'PSMODULEPATH'}
+    env['MIKA_ARCHIVE_PATH'] = str(args.archive)
     command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', source / 'install.ps1']
     run(command, env=env)
     run(command, env=env)  # Reinstallation must work and preserve the data directory.

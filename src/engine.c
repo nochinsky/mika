@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "platform.h"
 #include "transcribe.h"
 
 #include <limits.h>
@@ -15,6 +16,7 @@ static void engine_log(transcribe_log_level level, const char *message, void *us
 {
     (void)userdata;
     if (level == TRANSCRIBE_LOG_LEVEL_ERROR) {
+        mika_status_clear();
         fputs(message, stderr);
     }
 }
@@ -31,6 +33,7 @@ int mika_engine_open(const char *model_path, MikaCancelled cancelled, void *user
     *out = NULL;
     MikaEngine *engine = calloc(1, sizeof(*engine));
     if (!engine) {
+        mika_status_clear();
         fputs("mika: not enough memory to create an inference session.\n", stderr);
         return 1;
     }
@@ -39,6 +42,7 @@ int mika_engine_open(const char *model_path, MikaCancelled cancelled, void *user
     transcribe_log_set(engine_log, NULL);
     transcribe_status initialized = transcribe_init_backends_default();
     if (initialized != TRANSCRIBE_OK) {
+        mika_status_clear();
         fprintf(stderr, "mika: cannot initialize packaged CPU backends: %s.\n",
                 transcribe_status_string(initialized));
         free(engine);
@@ -49,6 +53,7 @@ int mika_engine_open(const char *model_path, MikaCancelled cancelled, void *user
     load.backend = TRANSCRIBE_BACKEND_CPU;
     transcribe_status status = transcribe_open(model_path, &load, NULL, &engine->session);
     if (status != TRANSCRIBE_OK) {
+        mika_status_clear();
         fprintf(stderr, "mika: cannot load model: %s.\n", transcribe_status_string(status));
         free(engine);
         return 1;
@@ -66,6 +71,7 @@ int mika_engine_run(MikaEngine *engine, const float *pcm, size_t frames,
         return 130;
     }
     if (!pcm || frames < 1600 || frames > INT_MAX) {
+        mika_status_clear();
         fputs("mika: recording must contain at least 0.1 seconds of audio.\n", stderr);
         return 1;
     }
@@ -77,6 +83,7 @@ int mika_engine_run(MikaEngine *engine, const float *pcm, size_t frames,
         return 130; /* Never publish a partial transcript after cancellation. */
     }
     if (status != TRANSCRIBE_OK) {
+        mika_status_clear();
         fprintf(stderr, "mika: transcription failed: %s.\n", transcribe_status_string(status));
         return 1;
     }

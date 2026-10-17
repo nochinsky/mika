@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "pcm.h"
+#include "platform.h"
 #include "miniaudio.h"
 
 #include <stdio.h>
@@ -33,14 +34,20 @@ int mika_audio_start(MikaAudio **out)
 {
     *out = NULL;
     MikaAudio *audio = calloc(1, sizeof(*audio));
-    if (!audio) { fputs("mika: not enough memory for microphone capture.\n", stderr); return 1; }
+    if (!audio) {
+        mika_status_clear();
+        fputs("mika: not enough memory for microphone capture.\n", stderr);
+        return 1;
+    }
     mika_atomic_init(&audio->stopping, 0);
     if (mika_pcm_init(&audio->pcm, MIKA_MAX_FRAMES)) {
+        mika_status_clear();
         fputs("mika: not enough memory for the recording buffer.\n", stderr);
         goto failed;
     }
     ma_result result = ma_context_init(NULL, 0, NULL, &audio->context);
     if (result != MA_SUCCESS) {
+        mika_status_clear();
         fprintf(stderr, "mika: no usable audio backend: %s.\n", ma_result_description(result));
         goto failed;
     }
@@ -54,6 +61,7 @@ int mika_audio_start(MikaAudio **out)
     config.pUserData = audio;
     result = ma_device_init(&audio->context, &config, &audio->device);
     if (result != MA_SUCCESS) {
+        mika_status_clear();
         fprintf(stderr, "mika: cannot open the default microphone: %s.\n"
                         "      Check the system input device and microphone permissions.\n",
                 ma_result_description(result));
@@ -62,6 +70,7 @@ int mika_audio_start(MikaAudio **out)
     audio->device_ready = 1;
     result = ma_device_start(&audio->device);
     if (result != MA_SUCCESS) {
+        mika_status_clear();
         fprintf(stderr, "mika: cannot start microphone capture: %s.\n", ma_result_description(result));
         goto failed;
     }

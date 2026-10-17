@@ -32,9 +32,10 @@ with tempfile.TemporaryDirectory() as temporary:
             shutil.copy2(library, root / 'lib' / library.name, follow_symlinks=False)
         if not list((root / 'lib').glob('*ggml-cpu*')):
             raise SystemExit('Missing CPU dispatch modules in installed package')
-    for filename in ['LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md']:
+    for filename in ['LICENSE', 'README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md']:
         shutil.copy2(source / filename, root / filename)
     shutil.copytree(source / 'licenses', root / 'licenses')
+    shutil.copytree(source / 'docs', root / 'docs')
     if args.dependencies:
         for dependency in args.dependencies.iterdir():
             if not dependency.is_dir():

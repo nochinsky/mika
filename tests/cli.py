@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 import signal
+import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -11,6 +13,7 @@ import unittest
 MIKA = str(Path(sys.argv[1]).resolve())
 FIXTURE = str(Path(sys.argv[2]).resolve())
 sys.argv = sys.argv[:1]
+VERSION = re.search(r'project\(mika VERSION ([^ ]+)', (Path(__file__).resolve().parents[1] / 'CMakeLists.txt').read_text()).group(1)
 
 if os.name == "posix":
     import fcntl
@@ -19,8 +22,11 @@ if os.name == "posix":
     import termios
 
     class TerminalProcess:
-        def __init__(self, binary=FIXTURE, env=None):
+        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False):
             self.master, self.slave = pty.openpty()
+            fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
+            self.redirect_stderr = redirect_stderr
+            self.diagnostics = b''
             self.before = termios.tcgetattr(self.slave)
             self.messages = b""
 
@@ -29,7 +35,7 @@ if os.name == "posix":
                 fcntl.ioctl(self.slave, termios.TIOCSCTTY, 0)
 
             self.process = subprocess.Popen(
-                [binary], stdin=self.slave, stdout=subprocess.PIPE, stderr=self.slave,
+                [binary], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
                 env={**os.environ, **(env or {})}, preexec_fn=session,
             )
 
@@ -50,7 +56,8 @@ if os.name == "posix":
 
         def finish(self):
             try:
-                output, _ = self.process.communicate(timeout=10)
+                output, diagnostics = self.process.communicate(timeout=10)
+                self.diagnostics = diagnostics or b''
                 while select.select([self.master], [], [], 0)[0]:
                     self.messages += os.read(self.master, 4096)
                 after = termios.tcgetattr(self.slave)
@@ -66,6 +73,8 @@ if os.name == "posix":
                 self.process.wait()
             if self.process.stdout:
                 self.process.stdout.close()
+            if self.process.stderr:
+                self.process.stderr.close()
             for name in ("master", "slave"):
                 fd = getattr(self, name, None)
                 if fd is not None:
@@ -93,7 +102,7 @@ class Arguments(unittest.TestCase):
     def test_version(self):
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, b"mika 0.1.0\n" if os.name != "nt" else b"mika 0.1.0\r\n")
+        self.assertEqual(result.stdout, ('mika ' + VERSION + ('\r\n' if os.name == 'nt' else '\n')).encode())
         self.assertEqual(result.stderr, b"")
 
     @unittest.skipUnless(Path("/dev/full").exists(), "requires the /dev/full failure device")
@@ -136,7 +145,7 @@ class Controls(unittest.TestCase):
     def start(self, **env):
         process = TerminalProcess(env=env)
         self.addCleanup(process.close)
-        process.wait_for(b"Listening -")
+        process.wait_for(b"Listening 00:")
         modes = termios.tcgetattr(process.slave)
         self.assertFalse(modes[3] & termios.ECHO)
         self.assertFalse(modes[3] & termios.ICANON)
@@ -146,6 +155,40 @@ class Controls(unittest.TestCase):
         process = self.start()
         process.send(b"\r")
         self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
+
+    def test_success_leaves_no_status_lines(self):
+        process = self.start()
+        process.send(b"\r")
+        self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
+        # Apply plain carriage-return overwrites as a terminal would.
+        line, cursor = [], 0
+        for byte in process.messages:
+            if byte == 13:
+                cursor = 0
+            else:
+                self.assertGreaterEqual(byte, 32, process.messages)
+                if cursor == len(line): line.append(byte)
+                else: line[cursor] = byte
+                cursor += 1
+        self.assertFalse(bytes(line).strip(), process.messages)
+        for old_log in (b"Checking model", b"Loading model", b"Opening microphone", b"(CPU)", b"\x1b"):
+            self.assertNotIn(old_log, process.messages)
+
+    def test_narrow_dumb_terminal_does_not_wrap_or_use_ansi(self):
+        process = TerminalProcess(columns=32, env={"TERM": "dumb"})
+        self.addCleanup(process.close)
+        process.wait_for(b"Listening 00:")
+        process.send(b"\r")
+        self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
+        self.assertNotIn(b"\x1b", process.messages)
+        self.assertNotIn(b"\n", process.messages)
+        self.assertTrue(all(len(part) < 32 for part in process.messages.split(b"\r")))
+
+    def test_redirected_stderr_contains_no_transient_status(self):
+        process = TerminalProcess(redirect_stderr=True, env={"MIKA_FIXTURE_LIMIT": "1"})
+        self.addCleanup(process.close)
+        self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
+        self.assertEqual(process.diagnostics, b"")
 
     def test_escape_discards_recording(self):
         process = self.start()

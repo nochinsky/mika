@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(mika VERSION 0.1.0 LANGUAGES C CXX)
+project(mika VERSION 0.1.1 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -104,12 +104,12 @@ target_include_directories(mika_pcm PUBLIC src)
 mika_warnings(mika_pcm)
 
 add_library(mika_audio STATIC src/audio.c)
-target_link_libraries(mika_audio PUBLIC mika_pcm mika_miniaudio)
+target_link_libraries(mika_audio PUBLIC mika_pcm mika_miniaudio mika_platform)
 mika_warnings(mika_audio)
 
 add_library(mika_engine STATIC src/engine.c)
 target_include_directories(mika_engine PUBLIC src)
-target_link_libraries(mika_engine PUBLIC transcribe)
+target_link_libraries(mika_engine PUBLIC transcribe mika_platform)
 mika_warnings(mika_engine)
 
 add_executable(mika src/main.c)
@@ -118,7 +118,8 @@ target_link_libraries(mika PRIVATE mika_engine mika_model mika_audio)
 mika_warnings(mika)
 
 install(TARGETS mika RUNTIME DESTINATION bin)
-install(FILES README.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION share/doc/mika)
+install(FILES README.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION share/doc/mika)
+install(DIRECTORY docs/ DESTINATION share/doc/mika/docs)
 install(DIRECTORY licenses/ DESTINATION share/licenses/mika)
 
 if(BUILD_TESTING)
@@ -140,6 +141,9 @@ if(BUILD_TESTING)
     target_compile_definitions(mika-cli-fixture PRIVATE MIKA_VERSION="${PROJECT_VERSION}")
     mika_warnings(mika-cli-fixture)
 
+    add_executable(mika-install-fixture tests/install_fixture.c)
+    mika_warnings(mika-install-fixture)
+
     add_executable(mika-download-test tests/download.c)
     target_link_libraries(mika-download-test PRIVATE mika_model)
     mika_warnings(mika-download-test)
@@ -155,6 +159,11 @@ if(BUILD_TESTING)
         add_test(NAME download COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/download.py"
             "$<TARGET_FILE:mika-download-test>")
         set_tests_properties(cli download PROPERTIES TIMEOUT 90)
+        if(WIN32)
+            add_test(NAME windows-console COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/windows_console.py"
+                "$<TARGET_FILE:mika-cli-fixture>")
+            set_tests_properties(windows-console PROPERTIES TIMEOUT 60)
+        endif()
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_test(NAME installers COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/installers.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/install.sh")

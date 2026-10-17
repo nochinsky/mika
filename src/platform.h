@@ -15,6 +15,9 @@ int mika_platform_init(void);
 int mika_cancelled(void *unused);
 double mika_now(void);
 int mika_stderr_is_terminal(void);
+/* Transient ASCII status on stderr only; silent when redirected. Clear before diagnostics. */
+void mika_status_show(const char *message);
+void mika_status_clear(void);
 MikaTerminal *mika_terminal_open(void);
 int mika_terminal_key(MikaTerminal *terminal, unsigned timeout_ms);
 void mika_terminal_discard_input(MikaTerminal *terminal);

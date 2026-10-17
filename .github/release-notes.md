@@ -1,12 +1,22 @@
-## Mika — first desktop test release
+## Quieter dictation, cleaner updates
 
-Offline, English-only speech-to-text. Run `mika`, speak after **Listening**, press
-**Enter** to transcribe, or **Esc / Ctrl+C** to cancel. Transcript output stays in
-the terminal; no clipboard integration, setup wizard, or background daemon.
+- One updating status line: Starting → Listening → Transcribing. It disappears on
+  success, leaving only the transcript. Works without ANSI support in classic
+  Windows consoles; redirected logs omit routine status.
+- Rerun the same installer to update. Current installations skip the archive
+  download; model files are preserved. `MIKA_REINSTALL=1` forces a repair.
+- Installer locking prevents competing updates. Failed updates roll back; recovery
+  files are kept if automatic restoration fails.
+- A shorter README focused on installation and use, with advanced details moved
+  into linked documentation.
 
-### Install
+The **60-second automatic finish remains unchanged**. No microphone recording or
+model download happens during installation. On first use, Mika asks before fetching
+its fixed 279 MB English model; later runs work offline.
 
-**Arch Linux / Linux / WSL (x86-64, glibc 2.35+):**
+### Install or update
+
+**Linux / Arch / WSL — x86-64, glibc 2.35+:**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | bash
@@ -18,27 +28,8 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | ba
 irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
 ```
 
-Install as your normal user, without sudo/admin. Linux may need a new terminal for
-PATH activation; the installer also prints the direct command. Windows updates
-its per-user PATH. Both installers verify archive checksums before installation.
+Close Mika before updating. Use `mika --version` to check the installed release.
 
-The first **run** asks before downloading the fixed **279 MB Granite Speech 5.0
-470M TurboCTC Q4_K_M** model. Later runs work offline. Release archives do not
-include model weights. Audio stays in memory and is never uploaded or saved.
-
-### Notes for testing
-
-- Select your default microphone in OS sound settings. WSL requires a working
-  WSLg/host audio input and Windows microphone permission.
-- 60-second recording limit; at the limit, Mika transcribes automatically.
-- Raw model output may be lowercase and unpunctuated.
-- CPU optimized modules are selected at runtime; no GPU/compiler/Python needed.
-- Linux and Windows CI validate real model inference, relocatable libraries,
-  download integrity, and installation. Actual microphone/keyboard behavior still
-  needs testing on your hardware; CI never records private audio.
-- ARM, 32-bit systems, Alpine/musl, and prebuilt macOS packages are not included.
-
-Report problems with OS/version, terminal, the command used, and exact error text.
-Do not attach private recordings unless you deliberately choose to share them.
-
-Mika code: MIT. Model: Apache-2.0. Dependency and model notices are bundled.
+Native Linux/Windows CI validates builds, model download/inference, installation,
+updates and failure paths. Terminal tests use fake audio, never a private microphone.
+See the [README](https://github.com/nochinsky/mika#readme) for usage.

@@ -36,6 +36,7 @@ jobs:
         with:
           path: .vcpkg-cache
           key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: deps-${{ runner.os }}-
       - name: Windows PowerShell installer transport
         if: runner.os == 'Windows'
         shell: pwsh
@@ -116,7 +117,8 @@ jobs:
             --dependencies build/vcpkg_installed/x64-windows-static/share
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/check_package.py --stage stage --archive dist/mika-windows-x86_64.zip `
-            --model "$env:GITHUB_WORKSPACE/build/test-model.gguf" --sample "$env:GITHUB_WORKSPACE/build/_deps/transcribe-src/samples/jfk.wav"
+            --model "$env:GITHUB_WORKSPACE/build/test-model.gguf" --sample "$env:GITHUB_WORKSPACE/build/_deps/transcribe-src/samples/jfk.wav" `
+            --installer-fixture "$env:GITHUB_WORKSPACE/build/bin/Release/mika-install-fixture.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

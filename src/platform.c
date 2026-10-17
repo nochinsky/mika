@@ -80,7 +80,21 @@ double mika_now(void)
     return (double)now.QuadPart / (double)frequency.QuadPart;
 }
 
-int mika_stderr_is_terminal(void) { return _isatty(_fileno(stderr)); }
+int mika_stderr_is_terminal(void)
+{
+    DWORD mode;
+    return GetConsoleMode((HANDLE)_get_osfhandle(_fileno(stderr)), &mode) != 0;
+}
+
+static unsigned status_columns(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    HANDLE output = (HANDLE)_get_osfhandle(_fileno(stderr));
+    return GetConsoleScreenBufferInfo(output, &info)
+        ? (unsigned)(info.srWindow.Right - info.srWindow.Left + 1) : 80;
+}
+static void status_lock(void) { _lock_file(stderr); }
+static void status_unlock(void) { _unlock_file(stderr); }
 
 MikaTerminal *mika_terminal_open(void)
 {
@@ -265,6 +279,7 @@ void mika_lock_release(MikaFileLock *lock)
 #include <poll.h>
 #include <signal.h>
 #include <sys/file.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -295,6 +310,14 @@ double mika_now(void)
 }
 
 int mika_stderr_is_terminal(void) { return isatty(STDERR_FILENO); }
+
+static unsigned status_columns(void)
+{
+    struct winsize size;
+    return ioctl(STDERR_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col ? size.ws_col : 80;
+}
+static void status_lock(void) { flockfile(stderr); }
+static void status_unlock(void) { funlockfile(stderr); }
 
 MikaTerminal *mika_terminal_open(void)
 {
@@ -434,6 +457,41 @@ void mika_lock_release(MikaFileLock *lock)
     if (lock) { close(lock->fd); free(lock); }
 }
 #endif
+
+/* Plain carriage returns work in classic Windows consoles and TERM=dumb too.
+ * Leave one column unused to avoid wrapping; never emit control bytes to a log. */
+static unsigned status_width;
+
+static void status_erase(void)
+{
+    unsigned columns = status_columns();
+    unsigned width = columns ? columns - 1 : 0;
+    if (width > status_width) { width = status_width; }
+    if (status_width) { fprintf(stderr, "\r%*s\r", (int)width, ""); }
+    status_width = 0;
+}
+
+void mika_status_show(const char *message)
+{
+    if (!mika_stderr_is_terminal()) { return; }
+    status_lock();
+    status_erase();
+    unsigned columns = status_columns();
+    size_t length = strlen(message);
+    if (length >= columns) { length = columns ? columns - 1 : 0; }
+    fprintf(stderr, "%.*s", (int)length, message);
+    status_width = (unsigned)length;
+    fflush(stderr);
+    status_unlock();
+}
+
+void mika_status_clear(void)
+{
+    status_lock();
+    status_erase();
+    fflush(stderr);
+    status_unlock();
+}
 
 char *mika_path_join(const char *directory, const char *name)
 {

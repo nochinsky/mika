@@ -1,17 +1,20 @@
 """CI validation of installed libraries and installers; never records microphone audio."""
 import argparse
+import hashlib
 from pathlib import Path
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
 parser.add_argument('--archive', type=Path, required=True)
 parser.add_argument('--model', type=Path, required=True)
 parser.add_argument('--sample', type=Path, required=True)
+parser.add_argument('--installer-fixture', type=Path)
 args = parser.parse_args()
 source = Path(__file__).resolve().parents[1]
 args.stage = args.stage.resolve()
@@ -63,8 +66,49 @@ else:
     env = {key: value for key, value in os.environ.items() if key.upper() != 'PSMODULEPATH'}
     env['MIKA_ARCHIVE_PATH'] = str(args.archive)
     command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', source / 'install.ps1']
-    run(command, env=env)
-    run(command, env=env)  # Reinstallation must work and preserve the data directory.
+    assert args.installer_fixture, 'Windows requires a fake old-release executable for transaction tests'
+    with tempfile.TemporaryDirectory() as directory:
+        old = Path(directory) / 'old.zip'
+        with zipfile.ZipFile(old, 'w') as bundle:
+            bundle.write(args.installer_fixture, 'mika/bin/mika.exe')
+            bundle.writestr('mika/VERSION', 'v0.0.0\n')
+        Path(str(old) + '.sha256').write_text(hashlib.sha256(old.read_bytes()).hexdigest() + '  old.zip\n')
+        assert 'Installed Mika 0.0.0' in run(command, env={**env, 'MIKA_ARCHIVE_PATH': str(old)})
+        models = root.parent / 'models'
+        models.mkdir(exist_ok=True)
+        marker = models / 'installer-preserve-test'
+        marker.write_text('keep model data')
+        assert 'Updated Mika 0.0.0 -> ' + version in run(command, env=env)
+        before = (root / 'bin/mika.exe').read_bytes()
+        # Corrupt checksums must not disturb a working installation.
+        bad = Path(directory) / 'bad.zip'
+        shutil.copyfile(args.archive, bad)
+        Path(str(bad) + '.sha256').write_text('0' * 64 + '  bad.zip\n')
+        failure = subprocess.run([str(x) for x in command], env={**env, 'MIKA_ARCHIVE_PATH': str(bad)}, capture_output=True, timeout=60)
+        assert failure.returncode != 0
+        assert (root / 'bin/mika.exe').read_bytes() == before
+        # A binary that starts before the move but fails afterward must roll back.
+        failure = subprocess.run([str(x) for x in command], env={**env, 'MIKA_ARCHIVE_PATH': str(old),
+                                 'MIKA_INSTALL_FIXTURE_FAIL_FINAL': '1'}, capture_output=True, timeout=60)
+        assert failure.returncode != 0, failure.stdout
+        assert (root / 'bin/mika.exe').read_bytes() == before
+        assert not list(root.parent.glob('.install.*'))
+        # No-op must not read or download the archive, but still repair PATH.
+        hidden = args.archive.with_name('hidden.zip')
+        args.archive.rename(hidden)
+        try:
+            assert 'already up to date' in run(command, env=env)
+        finally:
+            hidden.rename(args.archive)
+        obsolete = root / 'bin/obsolete-test'
+        obsolete.write_text('remove on explicit repair')
+        assert 'Reinstalled Mika' in run(command, env={**env, 'MIKA_REINSTALL': '1'})
+        assert not obsolete.exists()
+        assert marker.read_text() == 'keep model data'
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as registry:
+            entries = winreg.QueryValueEx(registry, 'Path')[0].split(';')
+        assert sum(x.rstrip('\\').lower() == str(root / 'bin').lower() for x in entries) == 1
     assert run([root / 'bin/mika.exe', '--version']).strip() == expected_version
     probe = root / 'bin/mika-inference-test.exe'
     shutil.copy2(args.stage / 'bin/mika-inference-test.exe', probe)

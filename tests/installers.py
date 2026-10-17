@@ -1,5 +1,7 @@
 """Linux installer transaction tests; private HOME, offline fixture, no real install."""
 import hashlib
+import fcntl
+import shutil
 import os
 from pathlib import Path
 import subprocess
@@ -59,6 +61,62 @@ class Installer(unittest.TestCase):
         self.assertEqual(subprocess.check_output([self.home / '.local/bin/mika', '--version']), b'mika 1.2.3\n')
         self.assertEqual((models / 'keep.gguf').read_bytes(), b'existing model')
         self.assertEqual((self.home / '.bashrc').read_text().count('# >>> Mika CLI >>>'), 1)
+
+    def test_current_install_skips_archive_and_repairs_missing_command(self):
+        self.install()
+        (self.home / '.local/bin/mika').unlink()
+        self.archive.unlink()  # The checksum remains; the archive must not be read.
+        result = self.install()
+        self.assertIn(b'already up to date', result.stdout)
+        self.assertTrue((self.home / '.local/bin/mika').is_symlink())
+
+    def test_upgrade_and_forced_repair_preserve_model(self):
+        self.install()
+        models = self.data / 'mika/models'
+        models.mkdir()
+        (models / 'keep').write_text('preserve')
+        self.package('1.2.4')
+        self.assertIn(b'Updated Mika 1.2.3 -> 1.2.4', self.install().stdout)
+        extra = self.root / 'bin/obsolete'
+        extra.write_text('remove on repair')
+        self.env['MIKA_REINSTALL'] = '1'
+        self.assertIn(b'Reinstalled Mika', self.install().stdout)
+        self.assertFalse(extra.exists())
+        self.assertEqual((models / 'keep').read_text(), 'preserve')
+
+    def test_failed_startup_repairs_same_release(self):
+        self.install()
+        (self.root / 'bin/mika').write_text('#!/bin/sh\nexit 1\n')
+        self.assertIn(b'Reinstalled Mika', self.install().stdout)
+        self.assertEqual(subprocess.check_output([self.root / 'bin/mika', '--version']), b'mika 1.2.3\n')
+
+    def test_simultaneous_installation_is_rejected(self):
+        self.root.parent.mkdir(parents=True)
+        with (self.root.parent / '.installer.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertIn(b'Another Mika installer', self.install(success=False).stderr)
+        self.assertFalse(self.root.exists())
+
+    def test_online_update_downloads_only_checksum_when_current(self):
+        tools = Path(self.scratch.name) / 'tools'
+        tools.mkdir()
+        calls = tools / 'requests'
+        stub = tools / 'curl'
+        stub.write_text(f'''#!{sys.executable}
+import pathlib, shutil, sys
+url = next(x for x in sys.argv if x.startswith('https://'))
+with pathlib.Path({str(calls)!r}).open('a') as out: out.write(url + '\\n')
+source = {str(self.archive)!r} + ('.sha256' if url.endswith('.sha256') else '')
+shutil.copyfile(source, sys.argv[sys.argv.index('--output') + 1])
+''')
+        stub.chmod(0o755)
+        self.env.pop('MIKA_ARCHIVE_PATH')
+        self.env['PATH'] = str(tools) + os.pathsep + os.environ['PATH']
+        self.install()
+        self.install()
+        requests = calls.read_text().splitlines()
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(sum(not url.endswith('.sha256') for url in requests), 1)
 
     def test_checksum_failure_leaves_installed_version_unchanged(self):
         self.install()

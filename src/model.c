@@ -228,13 +228,14 @@ int mika_model_ensure(MikaTerminal *terminal, char **model_path)
     char *path = directory ? mika_path_join(directory, MIKA_MODEL_FILE) : NULL;
     MikaFileLock *lock = NULL;
     if (!path) {
+        mika_status_clear();
         fputs("mika: cannot resolve a writable per-user model directory.\n", stderr);
         goto done;
     }
-    fputs("  Checking model...\n", stderr);
     int valid = mika_model_verify(path, MIKA_MODEL_BYTES, MIKA_MODEL_SHA256);
     if (valid == 130) { result = 130; goto done; }
     if (valid == MIKA_MODEL_VALID) { result = 0; goto done; }
+    mika_status_clear();
     if (valid == MIKA_MODEL_IO_ERROR) {
         fprintf(stderr, "mika: cannot read model at %s. Check file permissions.\n", path);
         goto done;

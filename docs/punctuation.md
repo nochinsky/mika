@@ -1,210 +1,212 @@
-# Experimental punctuation — not released
+# Experimental FullStop formatting — not released
 
-**Keep raw transcription as the default.** This prototype is not in the public
-installer, does not change Granite, and is not approved for a release. Ordinary
-builds do not fetch or load its dependencies. Release-bundle builds and the
-release packager explicitly reject the experimental configuration.
+**Raw transcription remains the default.** This branch replaces the earlier Edge
+experiment with an English FullStop INT8 classifier. Granite is unchanged. The
+public installer still provides v0.1.2 without formatting; this experiment is not
+merged to main, a release, or an approved default. Release-bundle builds and the
+release packager reject the experimental configuration.
 
-The first candidate is the English-only **Edge-Punct-Casing INT8** model,
-packaged by sherpa-onnx. It tags existing words with capitalization and optional
-commas, periods, and question marks. It does not generate replacement wording,
-correct speech-recognition errors, or support exclamation marks.
+## Try a developer build
 
-## Try a source build
-
-Use the development dependencies in [CONTRIBUTING.md](../CONTRIBUTING.md), plus
-Python 3.8+ for the **build-time asset fetcher only**. Explicitly enabling this
-option downloads pinned model, vocabulary, C API header, CPU runtime, and notices;
-the installed program does not need Python. No text/audio is uploaded.
+Use the ordinary dependencies in [CONTRIBUTING.md](../CONTRIBUTING.md), plus
+**Python 3.12+ for build-time conversion only**. Create a development environment:
 
 ```sh
-cmake -S . -B build-punctuation -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON
-cmake --build build-punctuation --config Release --parallel 8
+python3 -m venv build-punctuation-tools
+build-punctuation-tools/bin/python -m pip install -r scripts/requirements-punctuation.txt
+cmake -S . -B build-punctuation -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON \
+  -DPython3_EXECUTABLE="$PWD/build-punctuation-tools/bin/python"
+cmake --build build-punctuation --parallel 8
 ./build-punctuation/bin/mika --punctuate
 ```
 
-On Windows with Visual Studio, the command is typically
-`.\build-punctuation\bin\Release\mika.exe --punctuate`.
-Do not enable `MIKA_RELEASE_BUNDLE` in this prototype build. Native CPU tuning
-makes this a local test binary, not a portable binary for other computers. The
-conservative scalar source-build path can be much slower than Mika's dispatched
-release build; CI tunes the non-distributed prototype to its runner CPU rather
-than weakening the five-minute test.
+On Windows, use `py -3.12 -m venv build-punctuation-tools`, install requirements
+with `build-punctuation-tools\Scripts\python.exe`, and set `Python3_EXECUTABLE` to
+that interpreter's absolute path. Use Visual Studio/vcpkg as described in
+CONTRIBUTING, `cmake --build build-punctuation --config Release`, then
+`.\build-punctuation\bin\Release\mika.exe --punctuate`. Activation and a global
+execution-policy change are not required.
 
-- `mika` still produces raw output, including in an experimental build.
-- `mika --punctuate` explicitly opts into the formatting pass for that invocation.
-- Enter, Esc/Ctrl+C, the five-minute cap, stdout redirection, and the quiet UI
-  remain unchanged. Formatting is a transient stderr status.
-- The existing consented 279 MB speech-model download is unchanged. Punctuation
-  assets are installed with this **opt-in source build**, not downloaded during
-  dictation. Keep the `punctuation/` directory beside the experimental executable.
-- This prototype supports native x86-64 Linux and Windows, not ARM/macOS builds.
+Explicitly enabling this build downloads the **210 MB original model**, converts
+it locally using pinned developer packages, and verifies the resulting INT8 file's
+exact size/SHA-256. It also fetches pinned tokenizer source and CPU runtime assets.
+These are build-time network transfers, not dictation-time behavior. Cached,
+verified converted weights skip conversion. No Python packages are embedded or
+needed by the executable, and no model conversion or downloads occur in use.
 
-## Safety and fallback
+- `mika` stays raw, including in experimental builds.
+- `mika --punctuate` opts into formatting for that invocation only.
+- Keep the sibling `punctuation/` directory with the executable.
+- Enter, Esc/Ctrl+C, the five-minute cap, clean stdout/redirection and transient
+  stderr UI are unchanged. No accounts, GPU, uploads, clipboard or daemon.
+- Native-CPU builds are for the build machine, **not portable distributions**.
+- This prototype targets x86-64 Linux and Windows, not ARM/macOS.
+
+## Word safety and native implementation
 
 After transcription, Mika copies the raw text and releases the speech engine and
-recording buffer before loading punctuation. Both punctuation data files are
-size/SHA-256 verified on use. Libraries load lazily from the executable's
-`punctuation/` directory, never by searching the working directory.
+recording buffer before formatting. It verifies both formatting data files on
+use, then loads CPU ONNX Runtime and the source-built `mika-fullstop` module from
+the executable's `punctuation/` directory, not the working directory.
 
-The guard accepts only the same original tokens in the same order, allowing
-ASCII case changes, whitespace normalization, and at most one trailing `,`, `.`,
-or `?` per word. Original punctuation, apostrophes, hyphens, digits, and spelling
-cannot be removed or replaced; duplicate punctuation is rejected. There is no
-forced final period because an unfinished question should not be guessed into a
-statement just to make output look complete.
+The classifier predicts punctuation and per-character case. **The renderer copies
+original source characters, never reconstructed model words.** SentencePiece
+source offsets map case predictions back to the original text. Unknown pieces
+(such as hyphens) are retained rather than rendered as `<unk>`. Unalignable
+normalizer spans keep their original case. Punctuation predictions may be applied
+only at complete original-word boundaries, not inside words. Acronym-internal
+periods and unsupported pre-punctuation are not emitted.
 
-Missing/corrupt assets, missing libraries/entry points, model failures, C++
-exceptions, allocation failure, and rejected output keep the **original transcript**
-with a stderr warning. A cancellation discards both versions and prints no text.
-Synchronous native calls cannot poll Esc while executing; queued cancellation is
-checked immediately afterward. Native crashes/abort/OS termination cannot be
-recovered in-process—fallback is not a sandbox or a crash-recovery guarantee.
+An independent C guard accepts only the same words/order, ASCII case changes
+outside protected literals, normalized whitespace, and at most one appended
+comma/period/question mark. Original spelling, apostrophes, hyphens, digits and
+punctuation cannot be deleted or replaced; existing terminal punctuation is not
+stacked. No dictionary, forced-final-period rule, or spelling cleanup is used.
+The model does **not support exclamation marks**.
 
-This backend is deliberately limited to ASCII input, 32,768 bytes total and
-96 bytes per word. Unsupported text, including accented names, stays raw rather
-than being passed through upstream's byte-wise casing. **Word preservation does
-not guarantee preservation of meaning:** a misplaced comma or question mark can
-still change how the same words are understood.
+**Obvious literals also retain their exact original case:** tokens containing
+digits, internal dots/colons, path separators, underscores, email/code markers
+(`/ \\ _ @ + # = < > [ ] { } $ % & | ^ ~` or backticks), or a leading hyphen.
+Ordinary trailing sentence punctuation is ignored for that classification;
+English apostrophes and internal hyphens remain normal words. This is conservative:
+raw `c++` remains `c++`, rather than being normalized to `C++`. It is not a promise
+that an entire transcript is safe executable code or that all proper names will
+be capitalized correctly.
 
-Native SDK code remains mapped until process exit, avoiding unsafe unload-time
-registry/TLS teardown (and the resulting sanitizer-detected registry leaks).
-The MSVC bridge disables the usual `extern "C"`-is-nothrow assumption so C++
-exceptions from the SDK can reach its fallback boundary. This is not SEH/crash
-recovery. Sessions and returned strings are freed normally. Mika still exits after one run;
-there is no persistent service or cache in the background.
+The supported envelope remains ASCII, 32,768 input bytes and 96 bytes per word.
+Unsupported input stays raw. Sequential **254-subword windows with 16-subword
+overlap** bound model attention memory; overlap is trimmed symmetrically with
+source indices retained. No words are truncated at window boundaries. CPU
+inference uses one configured intra-op/inter-op thread and native SentencePiece;
+the old Sherpa tokenizer's unused hardware-sized pool is no longer involved.
 
-## Quality assessment
+Missing/corrupt data, missing libraries/symbols, allocation/model/shape/type errors,
+C++ exceptions or rejected results preserve the original transcript with a stderr
+warning. Cancellation discards both versions and prints no transcript. Queued
+cancellation is checked between stages/windows and after synchronous native calls.
+Native crashes, aborts and OS termination are not recoverable in-process: this is
+not a sandbox. Modules remain mapped until exit to avoid registry/TLS teardown
+hazards; sessions, temporary tensors and text are freed normally.
 
-The authored 30-example regression corpus is
-[`tests/punctuation_cases.json`](../tests/punctuation_cases.json). It includes
-ordinary conversation, questions, work dictation, names/brands, and literals.
-These are text fixtures, **not microphone recordings or a general accuracy
-benchmark**. References reflect one writer's punctuation; valid alternatives can
-score as mismatches.
+## Quality: improved, still not an approved default
 
-Initial local results:
+The original [30 examples](../tests/punctuation_cases.json) and their original
+thresholds/references are unchanged. The separate
+[60-example development validation set](../tests/punctuation_holdout.json) was
+written before its first model run (SHA-256
+`daa9645bdb832bd9f510efee09161e5a96888636b954154dfc3a709afa752350`). It includes
+questions, indirect questions/commands, contractions, brands, literals, ambiguity,
+fragments and disfluency. Predeclared acceptable style alternatives are reported
+separately and **do not replace the primary-reference quality-gate score**.
 
-| Check | Result |
-| --- | --- |
-| Word preservation | All 30 examples retained every word |
-| Formatting fallback | None on these fixtures |
-| Punctuation F1 against references | 67.5% |
-| Case-change F1 against references | 90.1% |
-| Expected question marks recovered | 5 of 10 |
-| Outputs with a final period/question mark | 8 of 30 |
-| Exact reference matches | 6 of 30 |
+Local results for the current source-preserving prototype:
 
-The preliminary quality bar was set before running this corpus: no lost words or
-ordinary-input fallback, punctuation/case-change F1 at least 90%, and question-mark
-recall at least 90%. **The candidate does not pass.** Do not make it the default,
-force punctuation heuristically, or tune this corpus merely to turn the gate green.
-A successful engineering CI run means the prototype behaves safely, **not** that
-its formatting quality is approved. The quality-report JSON records that decision
-separately.
+| Check | Original 30 | Additional 60 |
+| --- | ---: | ---: |
+| Words/order preserved | 30/30 | 60/60 |
+| Raw fallback | 0 | 0 |
+| Punctuation F1 | 80.4% | 90.0% |
+| Case-change F1 | 89.7% | 92.0% |
+| Expected question marks | 10/10 | 16/16 |
+| Extra question marks | 0 | 0 |
+| Outputs with final period/question mark | 30/30 | 60/60 |
+| Exact primary references | 14/30 | 42/60 |
+| Primary or predeclared acceptable reference | 14/30 | 48/60 |
 
-Examples of limitations include `Github` instead of `GitHub`, unchanged `openai`
-and `javascript`, and `What time does the meeting start` without a question mark.
-Proper mixed-case name restoration is unfinished in the upstream decoder.
+The earlier Edge prototype scored 67.5% punctuation F1, recovered 5/10 question
+marks and supplied a final mark in only 8/30 examples. FullStop is a substantial
+improvement on these fixtures, **not evidence of general dictation accuracy**.
 
-## Resource measurements and checks
+The first pass on the additional 60 scored 90.0% punctuation / 89.5% casing and
+revealed unwanted case changes in paths/emails. The generic literal-safety fix
+above was made after that observation. Consequently this set is now development
+validation, **not a still-independent blind holdout**. No expected answer was
+changed; the first-pass report remains in local build artifacts. References that
+expect `C++` from raw `c++` count against the conservative literal policy.
 
-Reproduce the native, punctuation-only measurements and authored assessment:
+The original gate requires no word loss/ordinary-input fallback, punctuation and
+case-change F1 >=90%, and question recall >=90%. **The original set still fails.**
+Passing the additional set cannot override that or approve a default/release.
+Neither passing engineering CI nor a tiny authored corpus replaces representative
+natural dictation and user assessment.
+
+Real remaining problems include `WHO` instead of interrogative `Who`,
+`State-of-The-art`, incomplete brand casing (`Openai`, `Powershell`), comma splices,
+and difficulty with disfluency. Word preservation cannot guarantee preservation
+of meaning. Text-only formatting cannot recover every intended pause or tone.
+Some score losses are harmless style choices (Oxford commas, `I am fine, thank
+you.` versus two sentences); report these limitations rather than tuning the
+corpus/adding heuristics just to turn a gate green.
+
+## Measurements and reproducibility
 
 ```sh
-ctest --test-dir build-punctuation -C Release --output-on-failure
-python3 scripts/evaluate_punctuation.py \
-  --probe build-punctuation/bin/mika-punctuation-test \
-  --assets build-punctuation/bin/punctuation \
-  --output build-punctuation/quality-report.json
-python3 scripts/benchmark_punctuation.py \
-  --probe build-punctuation/bin/mika-punctuation-test \
-  --assets build-punctuation/bin/punctuation \
-  --output build-punctuation/resource-report.json
+ctest --test-dir build-punctuation --output-on-failure
+python3 scripts/evaluate_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
+  --assets build-punctuation/bin/punctuation --output build-punctuation/quality-report.json
+python3 scripts/evaluate_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
+  --assets build-punctuation/bin/punctuation --corpus tests/punctuation_holdout.json \
+  --output build-punctuation/holdout-report.json
+python3 scripts/benchmark_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
+  --assets build-punctuation/bin/punctuation --output build-punctuation/resource-report.json
 ```
 
-Use `python` and the `bin/Release/*.exe` paths on Windows as appropriate.
-The benchmark uses five fresh processes per input, normal filesystem caches,
-and reports checksum/loading/inference/teardown time plus whole-process peak RSS.
-It is **not incremental memory inside Mika**, an end-to-end dictation benchmark,
-or a prediction for another CPU.
+Use `python`, `-C Release` and `bin/Release/*.exe` as appropriate on Windows.
+Five fresh native processes per text input, normal filesystem caches, include
+integrity verification, lazy loading, tokenization, inference, rendering and
+teardown. Python only drives the tests. Whole-probe peak RSS/Windows peak working
+set is **not incremental Mika RAM**, cold-disk timing or an OS comparison.
 
-On the i7-13700K/WSL development machine, the integrated native formatting probe
-measured approximately **40 ms / 52 MiB** for 18 words and **68 ms / 67 MiB** for
-748 words (median stage time / whole-process peak RSS). The longer input is
-repeated public speech text, not a natural five-minute dictation sample. These
-numbers include integrity checks and the prototype's actual lazy-loading path;
-they supersede the earlier bare-C-API probe's smaller process-RAM figures.
+On the local i7-13700K/WSL host, medians are approximately **119 ms / 124 MiB** for
+18 words and **219 ms / 124 MiB** for 748 words. The long input repeats public JFK
+text; it is not natural five-minute dictation. The earlier standalone ONNX-only
+217 ms measurement excluded verification/tokenization/rendering and must not be
+presented as the complete formatter.
 
-Native CI also measured the complete formatting stage (five fresh processes):
+The complete local Linux payload, including notices, is approximately **82 MB**.
+Weights/vocabulary alone are **53,471,412 bytes**, not the whole download/runtime.
+A native tokenizer/bridge is built from source; unused Sherpa/C++ API libraries,
+Python packages, original FP32 weights and import libraries are not deployed.
 
-| Host | 18 words: time / process peak | 748 words: time / process peak |
-| --- | --- | --- |
-| Ubuntu 22.04 CI | 61 ms / 45 MiB | 100 ms / 61 MiB |
-| Windows Server 2022 CI | 101 ms / 39 MiB | 145 ms / 55 MiB |
+`scripts/benchmark_pipeline.py` additionally compares five raw/formatted fresh
+public-WAV inference probes, using `--probe`, `--model`, `--sample`, and `--output`.
+It includes WAV decoding, speech load/inference and optional formatting/teardown,
+but excludes microphone capture, UI and the CLI's initial Granite checksum.
+Do not add formatting-only RSS to the ASR peak or infer end-user latency from it.
 
-These are different machines/OS memory-accounting systems, not an OS performance
-comparison. Windows uses peak working set. Payloads including notices measured
-38,766,412 bytes on Linux and 29,267,539 bytes on Windows.
+## Validation status
 
-The model and vocabulary occupy 7,639,930 bytes combined. The untrimmed Linux CPU
-runtime and C API libraries add 30,652,665 bytes: **38.3 MB uncompressed before
-notices**. Smaller custom runtimes might reduce this, but no savings are assumed.
+Local native validation currently passes all **12 suites**, including source-offset
+rendering, protected literals/unknown pieces, a 32,767-byte/16,384-word input,
+window seams, every cancellation checkpoint, injected exceptions/unsafe output,
+asset integrity, Unicode relocation, PTY controls, raw default, public-speech
+ASR-to-formatting and the complete 300-second repeated-public-speech regression.
+None records a microphone. Native Windows CI and the new sanitizer run are pending
+for this revision; earlier Edge checks are not FullStop validation.
 
-ONNX inference is configured with one thread. **The upstream tokenizer also
-creates an idle hardware-sized thread pool:** the 24-logical-CPU development
-machine reaches 25 OS threads during formatting. It would be misleading to call
-this a single-OS-thread implementation. This unnecessary pool is another item to
-fix before considering production integration.
+Workflow **Build and test**, manual input `punctuation=true`, runs ordinary package
+checks first, then this opt-in prototype on Ubuntu 22.04 / Windows Server 2022,
+and uploads reports only. It never publishes a punctuation binary/release.
 
-Tests cover mutation/length/control-byte guards, missing and tampered assets,
-unsafe native output, C++ exceptions, native cancellation, raw default/fallback,
-quiet redirected output, terminal restoration, Unicode/relocated paths, and
-native Windows classic-console behavior. With `MIKA_TEST_MODEL`, public JFK audio
-is tested through real ASR then formatting, including the complete 300-second
-repetition fixture. That confirms length handling and word retention, not natural
-long-form accuracy. No test records a microphone.
+## Provenance and licenses
 
-Native CI can be requested with workflow **Build and test**, input
-`punctuation=true`. It builds/tests ordinary releases first, then the opt-in
-prototype on Ubuntu 22.04 and Windows Server 2022, and uploads **reports only** for
-the prototype. It never publishes a punctuation release or prototype binary.
+Exact hashes/URLs: [fetcher](../scripts/fetch_punctuation.py). The English model
+and unchanged vocabulary are pinned to
+[revision b26fd1c40e88678859048898218ea4edcc24c84a](https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/tree/b26fd1c40e88678859048898218ea4edcc24c84a).
+The author declares Apache-2.0; the fetched model card/configuration and license
+are retained. The modified INT8 model is explicitly documented in
+[fullstop-NOTICE.txt](../licenses/fullstop-NOTICE.txt), including conversion method
+and original/derived hashes. No retraining took place.
 
-[Native validation run 39029275935](https://github.com/nochinsky/mika/actions/runs/39029275935)
-passed eight ordinary-build suites plus ten opt-in prototype suites **on each
-platform**, including real public-speech formatting, full five-minute input,
-asset/exception fallback, relocated Unicode paths, and Windows console cancellation.
-Both platforms reproduced the same failed quality gate; engineering success did
-not promote the candidate to default. Local ASan/UBSan also passed all seven
-configured suites, including the real native formatter and failure-injection
-paths, without sanitizer suppressions. Third-party libraries themselves are not
-instrumented by Mika's sanitizer option.
+Native CPU ONNX Runtime **1.28.2** (MIT plus third-party notices) is extracted from
+the pinned sherpa-onnx **v1.13.8** no-TTS SDK; no Sherpa inference library is
+linked/deployed. Runtime source: <https://github.com/microsoft/onnxruntime/tree/v1.28.2>.
+Native SentencePiece **v0.2.1**, commit
+[31646a467d2051eb904e0b45de3a73e91fe1c1e3](https://github.com/google/sentencepiece/tree/31646a467d2051eb904e0b45de3a73e91fe1c1e3),
+is Apache-2.0 with protobuf-lite/Abseil/Darts notices. This self-contained version
+avoids newer upstream build scripts' automatic Abseil checkout. Source is not
+modified; only its inference library is linked. Preserve all actual component
+notices/source-availability obligations when redistributing.
 
-The first native attempt exposed scalar-build timeouts, not a punctuation failure;
-its duration tests were retained unchanged and passed after runner-local CPU
-tuning. No live microphone or natural five-minute dictation was used in these
-checks. The public installer/release remains v0.1.2 and main is unchanged.
-
-## Provenance and licensing
-
-Exact sizes, hashes, URLs, and revisions are in
-[`scripts/fetch_punctuation.py`](../scripts/fetch_punctuation.py). The mirror's
-model/vocabulary hashes are verified; the original author's model card and source
-license are Apache-2.0. sherpa-onnx v1.13.8 supplies the CPU-only, **no-TTS** shared
-SDK, with static CRT on Windows; its ONNX Runtime is 1.28.2. Windows import-table
-inspection found OS DLL imports, not a new Visual C++ redistributable dependency.
-
-The build retains direct and no-TTS dependency license documents, including
-ONNX Runtime third-party notices, Apache components, BSD FFT/clustering code,
-Darts and thread-pool attribution headers, and Eigen's MPL-2.0 terms. No upstream
-library/model is modified. Their source locations are recorded in the fetcher;
-Eigen source is available at
-<https://gitlab.com/libeigen/eigen/-/tree/5.0.1> (MPL source availability).
-Redistribution must retain the actual linked components' notices and satisfy
-applicable source-availability requirements. The prototype is deliberately
-excluded from Mika's release packaging pending a production review.
-
-Sources: [original model](https://huggingface.co/frankyoujian/Edge-Punct-Casing),
-[paper](https://arxiv.org/abs/2407.13142),
-[Sherpa model documentation](https://k2-fsa.github.io/sherpa/onnx/punctuation/pretrained_models.html),
-[upstream decoder](https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.8/sherpa-onnx/csrc/online-punctuation-cnn-bilstm-impl.h).
+The source renderer/bridge is original Mika MIT code, informed by the model's
+[Apache-2.0 reference tagging conventions](https://github.com/1-800-BAD-CODE/punctuators/tree/e0723a4f5dfe5f4fac8571a916ea03571b87edd3).

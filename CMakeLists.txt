@@ -115,6 +115,11 @@ mika_warnings(mika_engine)
 add_library(mika_punctuation_guard STATIC src/punctuation.c)
 target_include_directories(mika_punctuation_guard PUBLIC src)
 mika_warnings(mika_punctuation_guard)
+set_target_properties(mika_punctuation_guard PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_library(mika_fullstop_render STATIC src/fullstop_render.cpp)
+target_link_libraries(mika_fullstop_render PUBLIC mika_punctuation_guard)
+set_target_properties(mika_fullstop_render PROPERTIES POSITION_INDEPENDENT_CODE ON)
+mika_warnings(mika_fullstop_render)
 
 add_executable(mika src/main.c)
 target_compile_definitions(mika PRIVATE MIKA_VERSION="${PROJECT_VERSION}")
@@ -132,7 +137,7 @@ if(MIKA_EXPERIMENTAL_PUNCTUATION)
        NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
         message(FATAL_ERROR "Punctuation prototype requires native Linux/Windows x86-64")
     endif()
-    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter)
     if(WIN32)
         set(punctuation_platform windows)
     else()
@@ -142,22 +147,59 @@ if(MIKA_EXPERIMENTAL_PUNCTUATION)
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/fetch_punctuation.py"
         --stage "${punctuation_stage}" --platform "${punctuation_platform}"
         COMMAND_ERROR_IS_FATAL ANY)
+    # Older, self-contained SentencePiece avoids the newer upstream's automatic
+    # unpinned Abseil checkout. Build only its inference static library.
+    set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+    set(SPM_ENABLE_TCMALLOC OFF CACHE BOOL "" FORCE)
+    set(SPM_BUILD_TEST OFF CACHE BOOL "" FORCE)
+    set(SPM_ABSL_PROVIDER internal CACHE STRING "" FORCE)
+    set(SPM_PROTOBUF_PROVIDER internal CACHE STRING "" FORCE)
+    FetchContent_Declare(sentencepiece
+        URL https://codeload.github.com/google/sentencepiece/tar.gz/31646a467d2051eb904e0b45de3a73e91fe1c1e3
+        URL_HASH SHA256=b4eb17e6bea5c9380ddd79d04d01d6aa5e280be8f3e3cef1f745a80e6d9451ce
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR mika-no-subproject)
+    FetchContent_MakeAvailable(sentencepiece)
+    add_subdirectory("${sentencepiece_SOURCE_DIR}" "${sentencepiece_BINARY_DIR}" EXCLUDE_FROM_ALL)
+    add_library(mika_ort SHARED IMPORTED)
+    if(WIN32)
+        set_target_properties(mika_ort PROPERTIES
+            IMPORTED_LOCATION "${punctuation_stage}/payload/onnxruntime.dll"
+            IMPORTED_IMPLIB "${punctuation_stage}/include/onnxruntime.lib")
+    else()
+        set_target_properties(mika_ort PROPERTIES IMPORTED_LOCATION "${punctuation_stage}/payload/libonnxruntime.so")
+    endif()
+    add_library(mika-fullstop SHARED src/fullstop.cpp)
+    target_compile_definitions(mika-fullstop PRIVATE MIKA_FULLSTOP_BUILD=1)
+    target_include_directories(mika-fullstop SYSTEM PRIVATE
+        "${punctuation_stage}/include" "${sentencepiece_SOURCE_DIR}/src")
+    target_link_libraries(mika-fullstop PRIVATE mika_fullstop_render sentencepiece-static mika_ort)
+    set_target_properties(mika-fullstop PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
+    if(UNIX)
+        set_target_properties(mika-fullstop PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "$ORIGIN")
+        target_link_options(mika-fullstop PRIVATE "LINKER:--exclude-libs,ALL")
+    endif()
+    mika_warnings(mika-fullstop)
     add_library(mika_punctuation STATIC src/punctuation_backend.cpp)
-    target_include_directories(mika_punctuation SYSTEM PRIVATE "${punctuation_stage}/include")
     target_link_libraries(mika_punctuation PUBLIC mika_punctuation_guard mika_model ${CMAKE_DL_LIBS})
     mika_warnings(mika_punctuation)
     if(MSVC)
-        # The upstream C ABI can propagate C++ exceptions. Do not let /EHsc's
-        # extern-C-is-nothrow assumption optimize away our fallback boundary.
+        # Retain a defensive boundary even for an unexpectedly throwing module.
+        # Do not let /EHsc's extern-C-is-nothrow assumption remove the catch.
         target_compile_options(mika_punctuation PRIVATE /EHsc-)
     endif()
     target_compile_definitions(mika PRIVATE MIKA_EXPERIMENTAL_PUNCTUATION=1)
     target_link_libraries(mika PRIVATE mika_punctuation)
     add_custom_target(mika-punctuation-assets ALL
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf "$<TARGET_FILE_DIR:mika>/punctuation"
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${punctuation_stage}/payload"
-            "$<TARGET_FILE_DIR:mika>/punctuation")
+            "$<TARGET_FILE_DIR:mika>/punctuation"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:mika-fullstop>"
+            "$<TARGET_FILE_DIR:mika>/punctuation/$<TARGET_FILE_NAME:mika-fullstop>")
+    add_dependencies(mika-punctuation-assets mika-fullstop)
     add_dependencies(mika mika-punctuation-assets)
     install(DIRECTORY "${punctuation_stage}/payload/" DESTINATION bin/punctuation)
+    install(TARGETS mika-fullstop LIBRARY DESTINATION bin/punctuation RUNTIME DESTINATION bin/punctuation)
 endif()
 
 install(TARGETS mika RUNTIME DESTINATION bin)
@@ -168,10 +210,19 @@ install(DIRECTORY licenses/ DESTINATION share/licenses/mika)
 if(BUILD_TESTING)
     add_executable(mika-inference-test tests/inference.c)
     target_link_libraries(mika-inference-test PRIVATE mika_engine mika_miniaudio mika_platform)
+    if(WIN32)
+        target_link_libraries(mika-inference-test PRIVATE psapi)
+    endif()
     mika_warnings(mika-inference-test)
     # CI can validate installed/relocated libraries; this probe is never packaged.
     install(TARGETS mika-inference-test RUNTIME DESTINATION bin
         COMPONENT Validation EXCLUDE_FROM_ALL)
+
+    add_executable(mika-fullstop-unit tests/fullstop_unit.cpp)
+    target_link_libraries(mika-fullstop-unit PRIVATE mika_fullstop_render)
+    mika_warnings(mika-fullstop-unit)
+    add_test(NAME fullstop-unit COMMAND mika-fullstop-unit)
+    set_tests_properties(fullstop-unit PROPERTIES TIMEOUT 30)
 
     add_executable(mika-punctuation-unit tests/punctuation_unit.c)
     target_link_libraries(mika-punctuation-unit PRIVATE mika_punctuation_guard)
@@ -199,6 +250,8 @@ if(BUILD_TESTING)
         add_dependencies(mika-cli-punctuation-fixture mika-punctuation-assets)
         add_library(mika-punctuation-fake SHARED tests/punctuation_fake.cpp)
         target_link_libraries(mika-punctuation-fake PRIVATE Threads::Threads)
+        target_include_directories(mika-punctuation-fake PRIVATE src)
+        target_compile_definitions(mika-punctuation-fake PRIVATE MIKA_FULLSTOP_BUILD=1)
         mika_warnings(mika-punctuation-fake)
         if(MSVC)
             target_compile_options(mika-punctuation-fake PRIVATE /EHsc-)
@@ -229,6 +282,9 @@ if(BUILD_TESTING)
 
     find_package(Python3 3.8 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME punctuation-evaluation COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/punctuation_evaluation.py")
+        set_tests_properties(punctuation-evaluation PROPERTIES TIMEOUT 30)
         add_test(NAME punctuation-fetch COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/punctuation_fetch.py")
         set_tests_properties(punctuation-fetch PROPERTIES TIMEOUT 30)

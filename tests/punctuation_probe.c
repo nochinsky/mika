@@ -47,8 +47,8 @@ static int probe(int argc, char **argv)
     char *out = NULL;
     double start = mika_now();
     int result = mika_punctuation_run(argv[1], raw, cancelled, &cancel, &out);
-    fprintf(stderr, "format_ms=%.3f result=%d peak_rss_kib=%" PRIu64 "\n",
-            (mika_now() - start) * 1000.0, result, peak_rss_kib());
+    fprintf(stderr, "format_ms=%.3f result=%d peak_rss_kib=%" PRIu64 " cancel_calls=%u\n",
+            (mika_now() - start) * 1000.0, result, peak_rss_kib(), cancel.calls);
     if (result != 130 && (puts(out ? out : raw) == EOF || fflush(stdout))) { result = 2; }
     free(out);
     free(raw);

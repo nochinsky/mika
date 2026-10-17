@@ -50,6 +50,51 @@ class Fetch(unittest.TestCase):
                         self.assertEqual(target.read_bytes(), b'previous')
                 self.assertEqual(list(root.iterdir()), [target])
 
+    def test_quantized_cache_skips_network_and_python_packages(self):
+        digest = hashlib.sha256(b'good').hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'model.int8.onnx'
+            target.write_bytes(b'good')
+            with patch.object(fetcher, 'QUANTIZED', (4, digest)), \
+                 patch.object(fetcher, 'fetch', side_effect=AssertionError('network')), \
+                 patch.object(fetcher.subprocess, 'run', side_effect=AssertionError('conversion')):
+                self.assertEqual(fetcher.quantized_model(root), target)
+
+    def test_quantization_is_verified_and_transactional(self):
+        digest = hashlib.sha256(b'good').hexdigest()
+        for received in (b'good', b'bad!', b'too long', None):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / 'original'
+                source.write_bytes(b'original')
+                target = root / 'model.int8.onnx'
+                target.write_bytes(b'previous')
+                def convert(command, check, timeout):
+                    self.assertTrue(check)
+                    self.assertGreater(timeout, 0)
+                    if received is None:
+                        raise RuntimeError('conversion failed')
+                    Path(command[-1]).write_bytes(received)
+                with patch.object(fetcher, 'QUANTIZED', (4, digest)), \
+                     patch.object(fetcher, 'fetch', return_value=source), \
+                     patch.object(fetcher.subprocess, 'run', side_effect=convert):
+                    if received == b'good':
+                        self.assertEqual(fetcher.quantized_model(root), target)
+                        self.assertEqual(target.read_bytes(), b'good')
+                    else:
+                        with self.assertRaises((RuntimeError, ValueError)):
+                            fetcher.quantized_model(root)
+                        self.assertEqual(target.read_bytes(), b'previous')
+                self.assertEqual(set(root.iterdir()), {source, target})
+
+    def test_fullstop_payload_does_not_deploy_sherpa_or_python(self):
+        for _, _, _, libraries in fetcher.SDK.values():
+            self.assertTrue(all('onnxruntime' in lib for lib in libraries))
+            self.assertFalse(any('sherpa-onnx-c-api' in lib for lib in libraries))
+        self.assertIn('sp.model', fetcher.ARTIFACTS)
+        self.assertNotIn('bpe.vocab', fetcher.ARTIFACTS)
+
     def test_non_https_and_redirect_downgrades_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             for url in ('http://example.test/a', 'file:///tmp/a'):

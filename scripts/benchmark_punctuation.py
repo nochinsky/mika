@@ -1,8 +1,9 @@
 """Native punctuation-only stage measurements, not incremental/end-to-end Mika RAM.
 
-Five fresh processes per input. Normal filesystem caches, one ONNX inference
-thread. The upstream tokenizer additionally creates an idle hardware-sized pool;
-this is NOT a single-OS-thread claim. Inputs are synthetic/public, not dictation.
+Five fresh processes per input. Normal filesystem caches, one configured ONNX
+CPU inference thread, native SentencePiece and sequential bounded windows.
+Includes integrity checks, lazy loading, tokenization, rendering and teardown.
+Inputs are synthetic/public, not microphone dictation; no end-user Python runtime.
 """
 import argparse
 import json

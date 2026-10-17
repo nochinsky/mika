@@ -1,0 +1,6 @@
+# Developer-only INT8 conversion. Never used by the Mika executable.
+# Python 3.12+; these versions reproduce the pinned derived model SHA-256.
+onnxruntime==1.28.0
+onnx==1.23.2
+numpy==2.5.4
+protobuf==7.36.2

@@ -8,6 +8,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <sys/resource.h>
+#endif
+
+static uint64_t peak_rss_kib(void)
+{
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS memory;
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), &memory, sizeof(memory))) { return 0; }
+    return (uint64_t)(memory.PeakWorkingSetSize / 1024u);
+#else
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage)) { return 0; }
+#ifdef __APPLE__
+    return (uint64_t)usage.ru_maxrss / 1024u;
+#else
+    return (uint64_t)usage.ru_maxrss;
+#endif
+#endif
+}
 
 int main(int argc, char **argv)
 {
@@ -20,6 +44,7 @@ int main(int argc, char **argv)
         fputs("usage: mika-inference-test MODEL.gguf SAMPLE.wav\n", stderr);
         return 2;
     }
+    double pipeline_start = mika_now();
     ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 16000);
     ma_uint64 frames = 0;
     void *pcm = NULL;
@@ -67,5 +92,7 @@ int main(int argc, char **argv)
     free(formatted);
     free(raw);
 #endif
+    fprintf(stderr, "pipeline_ms=%.3f peak_rss_kib=%" PRIu64 "\n",
+            (mika_now() - pipeline_start) * 1000.0, peak_rss_kib());
     return result;
 }

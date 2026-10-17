@@ -14,6 +14,9 @@ int main(void)
         {"hello.", "Hello."}, {"why?", "Why?"}, {"co-op work", "Co-op work."},
         {"  one\ttwo\nthree ", "One, two, three."},
         {"a b c", "A, B. C?"}, {"wow!", "Wow!"},
+        {"src/main.c", "src/main.c."}, {"mika_audio_stop", "mika_audio_stop."},
+        {"jane@example.com", "jane@example.com"}, {"c++ c#", "c++ c#."},
+        {"hello...", "Hello..."}, {"version1", "version1."},
     };
     const char *bad[][2] = {
         {"hello world", "Hello there world."}, {"hello world", "Hello."},
@@ -24,6 +27,9 @@ int main(void)
         {"hello", ".Hello"}, {"co-op", "Coop"}, {"foo", "F.oo"},
         {"1 2 3", "1 3 2"}, {"hello", "Hello\x1b[31m"}, {"hello", "Hello\x7f"},
         {"hello", "Hello\xc2\xa0"}, {"", "Invented"}, {"word", ""},
+        {"src/main.c", "SRC/main.c"}, {"mika_audio_stop", "Mika_audio_stop"},
+        {"jane@example.com", "Jane@example.COM"}, {"c++", "C++"},
+        {"--verbose", "--Verbose"}, {"version1", "Version1"},
     };
     for (size_t i = 0; i < sizeof(good)/sizeof(good[0]); ++i) {
         CHECK(mika_punctuation_preserves_words(good[i][0], good[i][1]));

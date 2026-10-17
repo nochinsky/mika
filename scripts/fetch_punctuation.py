@@ -1,46 +1,49 @@
-"""Developer-only, pinned assets for the unreleased punctuation prototype.
+"""Developer-only pinned assets for the unreleased English FullStop prototype.
 
-Invoked only by explicit MIKA_EXPERIMENTAL_PUNCTUATION=ON. No pip packages.
-The CLI itself never downloads punctuation assets or sends text over a network.
+Opt-in builds fetch original weights and quantize locally with pinned development
+packages. No Python runtime, conversion, downloads or uploads during dictation.
 """
 import argparse
 import hashlib
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
 
-VERSION = '1.13.8'
-MIRROR = 'https://huggingface.co/jiangzhuo9357/edge-punct-casing-en-onnx/resolve/a0897f6d38cc6f60ac9b9f807a31f7033d1fbc89/'
+VERSION = '1.13.8'  # Only the ORT binaries are used from this CPU/no-TTS SDK.
 RAW = 'https://raw.githubusercontent.com/'
+MODEL = 'https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/b26fd1c40e88678859048898218ea4edcc24c84a/'
+ORT = RAW + 'microsoft/onnxruntime/v1.28.2/'
+SP = RAW + 'google/sentencepiece/31646a467d2051eb904e0b45de3a73e91fe1c1e3/'
+SOURCE_MODEL = (MODEL + 'punct_cap_seg_en.onnx', 209532928, 'dd922d459da618cd324280889740608b76fb3e9e61d3f402291be1251f91421b')
+QUANTIZED = (52883510, 'd69b2df2db21c177b8ea9086e2324796176fb5a28fa8893f9df11b79bf3fc3ec')
 ARTIFACTS = {
-    'model.int8.onnx': (MIRROR + 'model.int8.onnx', 7490500, '9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e'),
-    'bpe.vocab': (MIRROR + 'bpe.vocab', 149430, 'e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5'),
-    'c-api.h': (RAW + 'k2-fsa/sherpa-onnx/v1.13.8/sherpa-onnx/c-api/c-api.h', 167657, '2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce'),
-    'sherpa-LICENSE.txt': (RAW + 'k2-fsa/sherpa-onnx/v1.13.8/LICENSE', 11358, 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'),
-    'edge-LICENSE.txt': (RAW + 'frankyoujian/Edge-Punct-Casing/c154bf777427f4549dfb56a0e9f696aae6136616/LICENSE', 11357, 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4'),
-    'onnxruntime-LICENSE.txt': (RAW + 'microsoft/onnxruntime/v1.28.2/LICENSE', 1073, '2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c'),
-    'onnxruntime-ThirdPartyNotices.txt': (RAW + 'microsoft/onnxruntime/v1.28.2/ThirdPartyNotices.txt', 325054, '0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2'),
-    # The SDK contains more than the punctuation implementation. Retain its
-    # no-TTS dependency notices too; do not mistake Apache-2.0 for the whole SDK.
-    'ssentencepiece-LICENSE.txt': (RAW + 'pkufool/simple-sentencepiece/v0.7/LICENSE', 11357, 'c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4'),
-    'ssentencepiece-darts-source.h': (RAW + 'pkufool/simple-sentencepiece/v0.7/ssentencepiece/csrc/darts.h', 53998, 'a0ff15abf69e2651dedef5acacf474b7b8d20ace8cd5dd79dd201e99ccfee91d'),
-    'ssentencepiece-threadpool-source.h': (RAW + 'pkufool/simple-sentencepiece/v0.7/ssentencepiece/csrc/threadpool.h', 3255, 'a0737647480c4fbab218b3540b4be0cb35edf9b4e869e275f56f79f0d25d2830'),
-    'kaldi-decoder-LICENSE.txt': (RAW + 'k2-fsa/kaldi-decoder/v0.3.0/LICENSE', 11358, 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'),
-    'kaldi-native-fbank-LICENSE.txt': (RAW + 'csukuangfj/kaldi-native-fbank/v1.22.3/LICENSE', 11358, 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'),
-    'kaldifst-LICENSE.txt': (RAW + 'k2-fsa/kaldifst/v1.8.0/LICENSE', 11728, 'a682d6efd1ee5dee08a8e405c233c2c198ea70ae0718129daa83ab58cfe31c5d'),
-    'openfst-COPYING.txt': (RAW + 'csukuangfj/openfst/v1.8.5-2026-07-09/COPYING', 559, '4300529197035fd3452350718a0b8cee984e9412c9932d7f35fcde849fc97a4b'),
-    'kissfft-COPYING.txt': (RAW + 'mborgerding/kissfft/febd4caeed32e33ad8b2e0bb5ea77542c40f18ec/COPYING', 246, 'a2840585f8411be8e6826a31ef15ae65c950bd74a2437a73b013398a934ad0c6'),
-    'kissfft-BSD-3-Clause.txt': (RAW + 'mborgerding/kissfft/febd4caeed32e33ad8b2e0bb5ea77542c40f18ec/LICENSES/BSD-3-Clause', 1830, '4d6bcab46f27d6d0c878e8305d4bdcfe040d52bf6656b9771f04c9fb9902c0ed'),
-    'hclust-LICENSE.txt': (RAW + 'csukuangfj/hclust-cpp/2026-02-25/LICENSE', 1483, 'e361d842da1d290351860ad6dcce2673a1e42e4f873a3ae1ff4eb92c6adaa882'),
-    'json-LICENSE.txt': (RAW + 'nlohmann/json/v3.12.0/LICENSE.MIT', 1076, '46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603'),
-    'eigen-COPYING.MPL2.txt': ('https://gitlab.com/libeigen/eigen/-/raw/5.0.1/COPYING.MPL2', 16727, '66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172'),
+    'sp.model': (MODEL + 'spe_32k_lc_en.model', 587902, '9e86d0263de80b3b68327a21f5350c8cdf846e4c4400253c9baf05e3d44871c3'),
+    'fullstop-model-card.md': (MODEL + 'README.md', 16830, '47e853ebf1ed795445914383e165ad37cac94156bebe2e723865b721ace80831'),
+    'fullstop-config.yaml': (MODEL + 'config.yaml', 302, '002ea72d7ef44a6d547b9ca251d6201c20bcf1e0d02e8bb2890141d92b8bfc8e'),
+    'onnxruntime-LICENSE.txt': (ORT + 'LICENSE', 1073, '2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c'),
+    'onnxruntime-ThirdPartyNotices.txt': (ORT + 'ThirdPartyNotices.txt', 325054, '0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2'),
+    'sentencepiece-LICENSE.txt': (SP + 'LICENSE', 11358, 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'),
+    'sentencepiece-protobuf-LICENSE.txt': (SP + 'third_party/protobuf-lite/LICENSE', 1732, '6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d'),
+    'sentencepiece-absl-LICENSE.txt': (SP + 'third_party/absl/LICENSE', 11365, 'd3e2f59e1d71176dfdb555ece6a41f7a5aa0f52ff21211010ace314f57695f6b'),
+    'sentencepiece-darts-LICENSE.txt': (SP + 'third_party/darts_clone/LICENSE', 1481, '155f59997298ee336602c49f9c1110f268ac394ca2197eb02647a3555935ad52'),
+    'sentencepiece-esaxx-LICENSE.txt': (SP + 'third_party/esaxx/LICENSE', 1112, '7c28553d1d3312d65fe309f76a22ebaf33a3d76c8c1e3b98a88ee4654ecb53db'),
+}
+HEADERS = {
+    'onnxruntime_c_api.h': (394991, 'b69a133143c0da61782b2b02cc8a620d21ac139231fd211719776d10385135c1'),
+    'onnxruntime_cxx_api.h': (168928, 'c6bf005e4063b7db911d0a6b030452bcb9d4fc5e87530a39d94c4a5fcd311b61'),
+    'onnxruntime_cxx_inline.h': (157610, '97f960b1bc4a372918893ef4c77102dee725ccfce0d76607f4570b03e7e28325'),
+    'onnxruntime_float16.h': (17991, '88b242845d25981633a0bbd1c148e273cf8bfb016ea3f57c4af41a06530f72b0'),
+    'onnxruntime_ep_c_api.h': (152985, 'db86df0f846b8d3bdbf429a5c76c5805293196575ca3c475878612591cd18e51'),
+    'onnxruntime_error_code.h': (2775, '5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721'),
 }
 SDK = {
-    'linux': ('linux-x64-shared-no-tts-lib', 9249201, 'bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b', ['libonnxruntime.so', 'libsherpa-onnx-c-api.so']),
-    'windows': ('win-x64-shared-MT-Release-no-tts-lib', 7536080, 'a1253e665c4f236119c443c8932a8acfca32a546c78c05962d483c9a0eae21b7', ['onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'sherpa-onnx-c-api.dll']),
+    'linux': ('linux-x64-shared-no-tts-lib', 9249201, 'bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b', ['libonnxruntime.so']),
+    'windows': ('win-x64-shared-MT-Release-no-tts-lib', 7536080, 'a1253e665c4f236119c443c8932a8acfca32a546c78c05962d483c9a0eae21b7', ['onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'onnxruntime.lib']),
 }
 
 
@@ -52,7 +55,13 @@ class HTTPSOnly(urllib.request.HTTPRedirectHandler):
 
 
 def verified(path, size, digest):
-    return path.is_file() and path.stat().st_size == size and hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    if not path.is_file() or path.stat().st_size != size:
+        return False
+    sha = hashlib.sha256()
+    with path.open('rb') as source:
+        for block in iter(lambda: source.read(65536), b''):
+            sha.update(block)
+    return sha.hexdigest() == digest
 
 
 def fetch(cache, name, spec):
@@ -85,8 +94,26 @@ def fetch(cache, name, spec):
             output.close()
             os.replace(temporary, destination)
         finally:
-            output.close()  # Windows cannot unlink an open failed download.
+            output.close()
             temporary.unlink(missing_ok=True)
+    return destination
+
+
+def quantized_model(cache):
+    destination = cache / 'model.int8.onnx'
+    if verified(destination, *QUANTIZED):
+        return destination
+    source = fetch(cache, 'fullstop.fp32.onnx', SOURCE_MODEL)
+    with tempfile.NamedTemporaryFile(dir=cache, suffix='.onnx', delete=False) as output:
+        temporary = Path(output.name)
+    try:
+        subprocess.run([sys.executable, str(Path(__file__).with_name('quantize_punctuation.py')),
+                        str(source), str(temporary)], check=True, timeout=300)
+        if not verified(temporary, *QUANTIZED):
+            raise ValueError('Derived FullStop model size/SHA-256 mismatch; refusing to publish it')
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
     return destination
 
 
@@ -96,28 +123,43 @@ def main():
     parser.add_argument('--platform', choices=SDK, required=True)
     args = parser.parse_args()
     cache = args.stage / 'downloads'
-    payload = args.stage / 'payload'
     include = args.stage / 'include'
-    for directory in [cache, payload, include, payload / 'licenses']:
+    for directory in (cache, include):
         directory.mkdir(parents=True, exist_ok=True)
-    for name, spec in ARTIFACTS.items():
-        src = fetch(cache, name, spec)
-        target = include / name if name == 'c-api.h' else payload / name if name in ('model.int8.onnx', 'bpe.vocab') else payload / 'licenses' / name
-        shutil.copyfile(src, target)
-    variant, size, digest, libraries = SDK[args.platform]
-    root = 'sherpa-onnx-v' + VERSION + '-' + variant
-    name = root + '.tar.bz2'
-    url = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/v' + VERSION + '/' + name
-    archive = fetch(cache, name, (url, size, digest))
-    with tarfile.open(archive, 'r:bz2') as bundle:
-        # Never extract paths/links from the archive. Copy only exact regular files.
-        for library in libraries:
-            member = bundle.getmember(root + '/lib/' + library)
-            if not member.isfile() or member.size > 50000000:
-                raise ValueError('Invalid runtime archive member')
-            with bundle.extractfile(member) as src, (payload / library).open('wb') as dst:
-                shutil.copyfileobj(src, dst)
-    print('Pinned prototype assets ready:', payload, flush=True)
+    # Publish a fresh payload only after all downloads/conversion succeed. Do not
+    # retain the previous experimental backend's unused libraries or vocabulary.
+    with tempfile.TemporaryDirectory(dir=args.stage, prefix='payload-') as temporary:
+        payload = Path(temporary) / 'payload'
+        (payload / 'licenses').mkdir(parents=True)
+        shutil.copyfile(quantized_model(cache), payload / 'model.int8.onnx')
+        for name, spec in ARTIFACTS.items():
+            target = payload / name if name == 'sp.model' else payload / 'licenses' / name
+            shutil.copyfile(fetch(cache, name, spec), target)
+        # Standard Apache-2.0 text, retained under the model's own filename too.
+        shutil.copyfile(payload / 'licenses/sentencepiece-LICENSE.txt', payload / 'licenses/fullstop-LICENSE.txt')
+        shutil.copyfile(Path(__file__).resolve().parents[1] / 'licenses/fullstop-NOTICE.txt',
+                        payload / 'licenses/fullstop-NOTICE.txt')
+        for name, (size, digest) in HEADERS.items():
+            url = ORT + 'include/onnxruntime/core/session/' + name
+            shutil.copyfile(fetch(cache, name, (url, size, digest)), include / name)
+        variant, size, digest, libraries = SDK[args.platform]
+        root = 'sherpa-onnx-v' + VERSION + '-' + variant
+        name = root + '.tar.bz2'
+        url = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/v' + VERSION + '/' + name
+        archive = fetch(cache, name, (url, size, digest))
+        with tarfile.open(archive, 'r:bz2') as bundle:
+            for library in libraries:
+                member = bundle.getmember(root + '/lib/' + library)
+                if not member.isfile() or member.size > 50000000:
+                    raise ValueError('Invalid runtime archive member')
+                target = include / library if library.endswith('.lib') else payload / library
+                with bundle.extractfile(member) as src, target.open('wb') as dst:
+                    shutil.copyfileobj(src, dst)
+        destination = args.stage / 'payload'
+        if destination.exists():
+            shutil.rmtree(destination)
+        payload.rename(destination)
+    print('Pinned FullStop prototype assets ready:', args.stage / 'payload', flush=True)
 
 
 if __name__ == '__main__':

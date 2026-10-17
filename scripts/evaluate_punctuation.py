@@ -50,6 +50,11 @@ def main():
     results = []
     for number, case in enumerate(cases):
         raw, expected = case['raw'], case['expected']
+        # Alternatives must be authored before evaluation, not selected after
+        # observing model output. They do not replace the primary gate score.
+        acceptable = [expected, *case.get('acceptable', [])]
+        for reference in acceptable:
+            events(raw, reference)
         with tempfile.TemporaryDirectory(prefix='Mika authored text ü ') as directory:
             source = Path(directory) / 'input.txt'
             source.write_text(raw, encoding='utf-8')
@@ -64,7 +69,8 @@ def main():
         pred_c.update((number, *event) for event in c)
         gold_c.update((number, *event) for event in gc)
         results.append({**case, 'output': output, 'fallback': result.returncode == 1,
-                        'exact_reference': output == expected})
+                        'exact_reference': output == expected,
+                        'acceptable_reference': output in acceptable})
     punctuation = score(pred_p, gold_p)
     casing = score(pred_c, gold_c)
     question = score({event for event in pred_p if event[-1] == '?'},
@@ -74,11 +80,24 @@ def main():
     # 30 authored examples establishes production quality on real dictation.
     thresholds = {'punctuation_f1': 0.90, 'casing_f1': 0.90, 'question_recall': 0.90}
     gate = not fallbacks and punctuation['f1'] >= .90 and casing['f1'] >= .90 and question['recall'] >= .90
-    report = dict(corpus='30 authored text examples; not real microphone dictation',
+    unambiguous = {i for i, case in enumerate(cases) if not case.get('ambiguous', False)}
+    unambiguous_questions = score({event for event in pred_p if event[0] in unambiguous and event[-1] == '?'},
+                                 {event for event in gold_p if event[0] in unambiguous and event[-1] == '?'})
+    categories = {}
+    for case in results:
+        row = categories.setdefault(case['category'], {'examples': 0, 'fallbacks': 0, 'acceptable_matches': 0})
+        row['examples'] += 1
+        row['fallbacks'] += int(case['fallback'])
+        row['acceptable_matches'] += int(case['acceptable_reference'])
+    report = dict(corpus=str(len(cases)) + ' authored text examples; not real microphone dictation',
+                  corpus_file=args.corpus.name,
                   corpus_sha256=hashlib.sha256(args.corpus.read_bytes()).hexdigest(),
                   examples=len(cases), word_preservation='all examples passed', fallbacks=fallbacks,
                   punctuation=punctuation, casing=casing, questions=question,
                   exact_references=sum(case['exact_reference'] for case in results),
+                  acceptable_references=sum(case['acceptable_reference'] for case in results),
+                  final_marks=sum(case['output'].endswith(('.', '?')) for case in results),
+                  unambiguous_questions=unambiguous_questions, categories=categories,
                   preliminary_thresholds=thresholds, preliminary_quality_gate_passed=bool(gate),
                   cases=results)
     args.output.parent.mkdir(parents=True, exist_ok=True)

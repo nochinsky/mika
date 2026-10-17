@@ -3,7 +3,7 @@ extern "C" {
 #include "model.h"
 #include "platform.h"
 }
-#include "c-api.h"
+#include "fullstop.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -59,10 +59,8 @@ class Library {
         if (!handle_) { throw std::runtime_error("punctuation library"); }
     }
     ~Library() {
-        /* Keep SDK code/global registries mapped until process exit. Unloading
-         * this prebuilt SDK leaks static registry allocations and risks dangling
-         * TLS destructors. Sessions and returned text are still freed promptly.
-         * Mika performs one formatting stage then exits; no resident service. */
+        /* Keep runtime/tokenizer code and registries mapped until process exit.
+         * Sessions and returned text are freed promptly; no resident service. */
 #ifdef _WIN32
         FreeLibrary(handle_);
 #else
@@ -114,39 +112,39 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
         fs::path base = directory ? fs::absolute(fs::u8path(directory))
                                   : executable_directory() / "punctuation";
         std::string model = (base / "model.int8.onnx").u8string();
-        std::string vocab = (base / "bpe.vocab").u8string();
-        int a = mika_model_verify(model.c_str(), 7490500,
-            "9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e");
-        int b = mika_model_verify(vocab.c_str(), 149430,
-            "e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5");
+        std::string vocab = (base / "sp.model").u8string();
+        int a = mika_model_verify(model.c_str(), 52883510,
+            "d69b2df2db21c177b8ea9086e2324796176fb5a28fa8893f9df11b79bf3fc3ec");
+        int b = mika_model_verify(vocab.c_str(), 587902,
+            "9e86d0263de80b3b68327a21f5350c8cdf846e4c4400253c9baf05e3d44871c3");
         if (a == 130 || b == 130 || stop(cancelled, userdata)) { return 130; }
         if (a != MIKA_MODEL_VALID || b != MIKA_MODEL_VALID) { return 1; }
 #ifdef _WIN32
         Library runtime(base / "onnxruntime.dll");
-        Library backend(base / "sherpa-onnx-c-api.dll");
+        Library backend(base / "mika-fullstop.dll");
 #else
         Library runtime(base / "libonnxruntime.so");
-        Library backend(base / "libsherpa-onnx-c-api.so");
+        Library backend(base / "libmika-fullstop.so");
 #endif
-        auto create = backend.symbol<decltype(&SherpaOnnxCreateOnlinePunctuation)>(
-            "SherpaOnnxCreateOnlinePunctuation");
-        auto destroy = backend.symbol<decltype(&SherpaOnnxDestroyOnlinePunctuation)>(
-            "SherpaOnnxDestroyOnlinePunctuation");
-        auto apply = backend.symbol<decltype(&SherpaOnnxOnlinePunctuationAddPunct)>(
-            "SherpaOnnxOnlinePunctuationAddPunct");
-        auto free_text = backend.symbol<decltype(&SherpaOnnxOnlinePunctuationFreeText)>(
-            "SherpaOnnxOnlinePunctuationFreeText");
-        SherpaOnnxOnlinePunctuationConfig config{};
-        config.model.cnn_bilstm = model.c_str();
-        config.model.bpe_vocab = vocab.c_str();
-        config.model.num_threads = 1;
-        config.model.provider = "cpu";
-        std::unique_ptr<const SherpaOnnxOnlinePunctuation, decltype(destroy)> punct(create(&config), destroy);
+        auto create = backend.symbol<decltype(&MikaFullstopOpen)>("MikaFullstopOpen");
+        auto destroy = backend.symbol<decltype(&MikaFullstopClose)>("MikaFullstopClose");
+        auto apply = backend.symbol<decltype(&MikaFullstopApply)>("MikaFullstopApply");
+        auto free_text = backend.symbol<decltype(&MikaFullstopFreeText)>("MikaFullstopFreeText");
+        std::unique_ptr<MikaFullstop, decltype(destroy)> punct(create(model.c_str(), vocab.c_str()), destroy);
         if (stop(cancelled, userdata)) { return 130; }
         if (!punct) { return 1; }
-        std::unique_ptr<const char, decltype(free_text)> text(apply(punct.get(), raw), free_text);
-        if (stop(cancelled, userdata)) { return 130; }
-        if (!text || !mika_punctuation_preserves_words(raw, text.get())) { return 1; }
+        struct Cancellation { MikaPunctuationCancelled callback; void *data; } state{cancelled, userdata};
+        auto poll = [](void *data) -> int {
+            auto *s = static_cast<Cancellation *>(data);
+            return stop(s->callback, s->data) ? 1 : 0;
+        };
+        char *candidate = nullptr;
+        int code;
+        try { code = apply(punct.get(), raw, poll, &state, &candidate); }
+        catch (...) { if (candidate) { free_text(candidate); } throw; }
+        std::unique_ptr<char, decltype(free_text)> text(candidate, free_text);
+        if (code == 130 || stop(cancelled, userdata)) { return 130; }
+        if (code || !text || !mika_punctuation_preserves_words(raw, text.get())) { return 1; }
         size_t length = std::strlen(text.get());
         *out = static_cast<char *>(std::malloc(length + 1));
         if (!*out) { return 1; }

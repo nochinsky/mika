@@ -1,4 +1,5 @@
 #include "punctuation.h"
+#include <string.h>
 
 static int space(unsigned char ch)
 {
@@ -24,6 +25,22 @@ int mika_punctuation_input_valid(const char *raw)
     return 0;
 }
 
+int mika_punctuation_word_literal(const char *word, size_t length)
+{
+    if (!word || !length || length > MIKA_PUNCTUATION_MAX_WORD) { return 0; }
+    if (word[0] == '-') { return 1; }
+    /* Ignore ordinary sentence-ending punctuation when looking for internal
+     * code structure. Do not attempt brand-name correction or guess spelling. */
+    while (length && (word[length - 1] == '.' || word[length - 1] == ',' ||
+           word[length - 1] == '?' || word[length - 1] == '!' || word[length - 1] == ':' ||
+           word[length - 1] == ';' || word[length - 1] == '"' || word[length - 1] == '\'')) { --length; }
+    for (size_t i = 0; i < length; ++i) {
+        char ch = word[i];
+        if ((ch >= '0' && ch <= '9') || strchr("/\\_@+#=.:<>[]{}$%&|^~`", ch)) { return 1; }
+    }
+    return 0;
+}
+
 int mika_punctuation_preserves_words(const char *raw, const char *candidate)
 {
     if (!mika_punctuation_input_valid(raw) || !candidate) { return 0; }
@@ -40,9 +57,12 @@ int mika_punctuation_preserves_words(const char *raw, const char *candidate)
         while (space(*a)) { ++a; }
         while (space(*b)) { ++b; }
         if (!*a || !*b) { return !*a && !*b; }
+        const unsigned char *end = a;
+        while (*end && !space(*end)) { ++end; }
+        int literal = mika_punctuation_word_literal((const char *)a, (size_t)(end - a));
         unsigned char last = 0;
         while (*a && !space(*a)) {
-            if (!*b || space(*b) || fold(*a) != fold(*b)) { return 0; }
+            if (!*b || space(*b) || (literal ? *a != *b : fold(*a) != fold(*b))) { return 0; }
             last = *a++;
             ++b;
         }

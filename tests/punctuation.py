@@ -17,8 +17,9 @@ import cli  # Reuse PTY harness; its TestCases are not collected in this module.
 sys.argv = [__file__]
 
 SHORT = 'hello how are you i am fine thank you i am going home are you coming with me'
-EXPECTED = 'Hello, how are you? I am fine. Thank you. I am going home. Are you coming with me?'
-RUNTIME = ['onnxruntime.dll', 'sherpa-onnx-c-api.dll'] if os.name == 'nt' else ['libonnxruntime.so', 'libsherpa-onnx-c-api.so']
+# Deterministic native-model smoke output, not a quality-approved reference.
+EXPECTED = 'Hello, how are you? I am fine, Thank you, I am going home. are you coming with me?'
+RUNTIME = ['onnxruntime.dll', 'mika-fullstop.dll'] if os.name == 'nt' else ['libonnxruntime.so', 'libmika-fullstop.so']
 
 
 def words(text):
@@ -32,7 +33,7 @@ class Native(unittest.TestCase):
         cls.root = Path(cls.temporary.name)
         cls.fake_assets = cls.root / 'fake'
         cls.fake_assets.mkdir()
-        for name in ('model.int8.onnx', 'bpe.vocab'):
+        for name in ('model.int8.onnx', 'sp.model'):
             shutil.copy2(ASSETS / name, cls.fake_assets / name)
         for name in RUNTIME:
             shutil.copy2(FAKE, cls.fake_assets / name)
@@ -65,6 +66,37 @@ class Native(unittest.TestCase):
         self.assertEqual(words(result.stdout), words(text))
         self.assertGreater(result.stdout.count('.'), 10)
 
+    def test_unknown_symbols_and_literals_keep_all_original_characters(self):
+        samples = [
+            "this is a five-minute test with twenty-five examples",
+            "the state-of-the-art method needs a follow-up",
+            "open src/main.c and find mika_audio_stop",
+            "send the file to jane@example.com tomorrow",
+            "keep c++ c# + - _ @ / \\ and 3.14 unchanged",
+            "hello. are you ready? don't add duplicate punctuation!",
+        ]
+        for text in samples:
+            result = self.run_probe(text)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            a, b = text.split(), result.stdout.split()
+            self.assertEqual(len(a), len(b))
+            for original, restored in zip(a, b):
+                self.assertEqual(restored[:len(original)].lower(), original.lower())
+                self.assertIn(restored[len(original):], ('', ',', '.', '?'))
+                if original[-1] in '.,?!:;\"\'':
+                    self.assertEqual(len(original), len(restored))
+            self.assertNotIn('<unk>', result.stdout)
+
+    def test_maximum_input_and_many_window_seams(self):
+        # Exactly the largest supported length without a trailing space; each
+        # word is legal, so rejection is not an acceptable substitute for bounds.
+        text = 'a ' * 16383 + 'a'
+        self.assertEqual(len(text), 32767)
+        result = self.run_probe(text)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(words(result.stdout), text.split())
+        self.assertGreater(int(re.search(r'cancel_calls=(\d+)', result.stderr)[1]), 100)
+
     def test_empty_and_whitespace_need_no_assets(self):
         for text in ('', '   \t'):
             result = self.run_probe(text, assets=self.root / 'missing')
@@ -87,7 +119,7 @@ class Native(unittest.TestCase):
 
     def test_corrupt_or_truncated_assets_keep_raw(self):
         target = self.root / 'broken'
-        for name in ('model.int8.onnx', 'bpe.vocab'):
+        for name in ('model.int8.onnx', 'sp.model'):
             for truncate in (False, True):
                 shutil.copytree(self.fake_assets, target, dirs_exist_ok=True)
                 data = bytearray((target / name).read_bytes())
@@ -116,13 +148,47 @@ class Native(unittest.TestCase):
             result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_OUTPUT': out})
             self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'), result.stderr)
 
+    def test_case_sensitive_literals_are_independently_guarded(self):
+        for raw, wrong in [('open src/main.c', 'Open SRC/main.c.'),
+                           ('call mika_audio_stop', 'Call Mika_audio_stop.'),
+                           ('send to jane@example.com', 'Send to Jane@example.COM.')]:
+            result = self.run_probe(raw, assets=self.fake_assets, env={'MIKA_PUNCT_TEST_OUTPUT': wrong})
+            self.assertEqual((result.returncode, result.stdout), (1, raw + '\n'))
+        for raw in ('open src/main.c', 'call mika_audio_stop', 'send to jane@example.com'):
+            result = self.run_probe(raw)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for a, b in zip(raw.split(), result.stdout.split()):
+                if any(mark in a for mark in ('/', '_', '@')):
+                    self.assertEqual(b[:len(a)], a)
+
+    def test_missing_entrypoint_keeps_raw(self):
+        target = self.root / 'wrong-module'
+        shutil.copytree(self.fake_assets, target, dirs_exist_ok=True)
+        shutil.copy2(ASSETS / RUNTIME[0], target / RUNTIME[1])
+        result = self.run_probe(assets=target)
+        self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+
+    def test_native_cancellation_status_discards_allocated_output(self):
+        result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_CANCEL': '1'})
+        self.assertEqual((result.returncode, result.stdout), (130, ''))
+
     def test_native_case_and_punctuation_only_allowed(self):
         result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_OUTPUT': EXPECTED})
         self.assertEqual((result.returncode, result.stdout), (0, EXPECTED + '\n'))
 
     def test_cancellation_before_load_after_load_and_after_inference(self):
-        for at in (1, 2, 3, 4):
+        completed = self.run_probe()
+        calls = int(re.search(r'cancel_calls=(\d+)', completed.stderr)[1])
+        self.assertGreaterEqual(calls, 9)
+        for at in range(1, calls + 1):
             result = self.run_probe(cancel=at)
+            self.assertEqual((result.returncode, result.stdout), (130, ''), result.stderr)
+        long_text = ' '.join(['and so my fellow americans ask not what your country can do for you'] * 40)
+        completed = self.run_probe(long_text)
+        long_calls = int(re.search(r'cancel_calls=(\d+)', completed.stderr)[1])
+        self.assertGreater(long_calls, calls)
+        for at in (long_calls - 3, long_calls - 2, long_calls - 1, long_calls):
+            result = self.run_probe(long_text, cancel=at)
             self.assertEqual((result.returncode, result.stdout), (130, ''), result.stderr)
 
 
@@ -199,7 +265,7 @@ class Controls(unittest.TestCase):
         shutil.copy2(FIXTURE, binary)
         assets = target / 'punctuation'
         assets.mkdir(exist_ok=True)
-        for name in ('model.int8.onnx', 'bpe.vocab'):
+        for name in ('model.int8.onnx', 'sp.model'):
             shutil.copy2(ASSETS / name, assets / name)
         for name in RUNTIME:
             shutil.copy2(FAKE, assets / name)
@@ -227,7 +293,7 @@ class WindowsConsole(unittest.TestCase):
             shutil.copy2(FIXTURE, binary)
             assets = root / 'punctuation'
             assets.mkdir()
-            for name in ('model.int8.onnx', 'bpe.vocab'):
+            for name in ('model.int8.onnx', 'sp.model'):
                 shutil.copy2(ASSETS / name, assets / name)
             for name in RUNTIME:
                 shutil.copy2(FAKE, assets / name)

@@ -88,8 +88,8 @@ class Native(unittest.TestCase):
             self.assertNotIn('<unk>', result.stdout)
 
     def test_maximum_input_and_many_window_seams(self):
-        # Exactly the largest supported length without a trailing space; each
-        # word is legal, so rejection is not an acceptable substitute for bounds.
+        # Near the input limit, ending in a complete word. Every word is legal,
+        # so rejection is not an acceptable substitute for safe window bounds.
         text = 'a ' * 16383 + 'a'
         self.assertEqual(len(text), 32767)
         result = self.run_probe(text)

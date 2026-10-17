@@ -157,16 +157,27 @@ integrity verification, lazy loading, tokenization, inference, rendering and
 teardown. Python only drives the tests. Whole-probe peak RSS/Windows peak working
 set is **not incremental Mika RAM**, cold-disk timing or an OS comparison.
 
-On the local i7-13700K/WSL host, medians are approximately **119 ms / 124 MiB** for
-18 words and **219 ms / 124 MiB** for 748 words. The long input repeats public JFK
-text; it is not natural five-minute dictation. The earlier standalone ONNX-only
-217 ms measurement excluded verification/tokenization/rendering and must not be
-presented as the complete formatter.
+Measured complete formatting stage (median time / whole-process peak):
 
-The complete local Linux payload, including notices, is approximately **82 MB**.
-Weights/vocabulary alone are **53,471,412 bytes**, not the whole download/runtime.
-A native tokenizer/bridge is built from source; unused Sherpa/C++ API libraries,
-Python packages, original FP32 weights and import libraries are not deployed.
+| Host | 18 words | 748 words |
+| --- | --- | --- |
+| Local i7-13700K / WSL | 119 ms / 124 MiB | 219 ms / 124 MiB |
+| Ubuntu 22.04 native CI | 203 ms / 119 MiB | 340 ms / 119 MiB |
+| Windows Server 2022 native CI | 265 ms / 116 MiB | 514 ms / 116 MiB |
+
+These are different machines and memory-accounting systems, **not an OS speed
+comparison**. The long input repeats public JFK text, not natural five-minute
+dictation. The earlier standalone ONNX-only 217 ms measurement excluded
+verification/tokenization/rendering and is not the complete formatter. A separate
+local exact-limit run (32,768 bytes) observed a peak of one OS thread; this is not
+an unmeasured Windows thread-count claim.
+
+Complete payloads including notices measured **81,941,307 bytes on Linux CI** and
+**72,489,378 bytes on Windows CI** (about 82 MB / 72.5 MB decimal). Compiler/build
+versions slightly change the native module size. Weights/vocabulary alone are
+**53,471,412 bytes**, not the whole download/runtime. A native tokenizer/bridge is
+built from source; unused Sherpa/C++ API libraries, Python packages, original FP32
+weights and import libraries are not deployed.
 
 `scripts/benchmark_pipeline.py` additionally compares five raw/formatted fresh
 public-WAV inference probes, using `--probe`, `--model`, `--sample`, and `--output`.
@@ -174,19 +185,44 @@ It includes WAV decoding, speech load/inference and optional formatting/teardown
 but excludes microphone capture, UI and the CLI's initial Granite checksum.
 Do not add formatting-only RSS to the ASR peak or infer end-user latency from it.
 
+Five-process public-JFK pipeline medians:
+
+| Host | Raw / formatted probe time | Raw / formatted process peak |
+| --- | --- | --- |
+| Local WSL | 335 / 437 ms | 326 / 326 MiB |
+| Linux CI | 756 / 939 ms | 319 / 319 MiB |
+| Windows CI | 1,341 / 1,600 ms | 315 / 315 MiB |
+
+Speech processing already dominates the peak in **this particular probe**. These
+numbers do not prove zero added memory in every Mika workload, on live microphones,
+or on a different computer. Recording and the normal CLI's initial speech-model
+checksum are excluded. Raw/formatted runs use the same experimental speech build.
+
 ## Validation status
 
-Local native validation currently passes all **12 suites**, including source-offset
+[Native FullStop validation run 39036249265](https://github.com/nochinsky/mika/actions/runs/39036249265)
+passed **10 ordinary-build suites plus all 12 prototype suites on each platform**:
+Ubuntu 22.04 and Windows Server 2022. Both platforms independently generated the
+same pinned INT8 model hash and exactly the same outputs on all 90 authored
+examples. The original failed quality gate remains a separate research finding,
+not an engineering-test failure or default approval.
+
+Local validation also passed 10 ordinary-build suites, 12 prototype suites and
+**all 12 ASan/UBSan suites**, with leak detection enabled and no suppressions.
+Third-party libraries are not themselves instrumented. Tests include source-offset
 rendering, protected literals/unknown pieces, a 32,767-byte/16,384-word input,
 window seams, every cancellation checkpoint, injected exceptions/unsafe output,
-asset integrity, Unicode relocation, PTY controls, raw default, public-speech
-ASR-to-formatting and the complete 300-second repeated-public-speech regression.
-None records a microphone. Native Windows CI and the new sanitizer run are pending
-for this revision; earlier Edge checks are not FullStop validation.
+asset integrity, Unicode relocation, PTY/classic-console controls, raw default,
+public-speech ASR-to-formatting and the complete 300-second repetition regression.
+A separate local native exact-32,768-byte run and a source-installed Unicode-path
+fake-audio PTY smoke also passed. None records a microphone or establishes natural
+five-minute dictation accuracy. Source code validated by CI: `f6059df`.
 
 Workflow **Build and test**, manual input `punctuation=true`, runs ordinary package
-checks first, then this opt-in prototype on Ubuntu 22.04 / Windows Server 2022,
-and uploads reports only. It never publishes a punctuation binary/release.
+checks first, then this opt-in prototype on both platforms and uploads quality,
+formatting-resource, public-file-pipeline reports and test logs only. It never
+publishes a punctuation binary/release. Main and the public v0.1.2 installer are
+unchanged; this remains the separate `prototype/fullstop` branch.
 
 ## Provenance and licenses
 

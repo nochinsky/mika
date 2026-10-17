@@ -15,6 +15,8 @@ kernel.CreateConsoleScreenBuffer.argtypes = [W.DWORD, W.DWORD, C.c_void_p, W.DWO
 kernel.CreateConsoleScreenBuffer.restype = W.HANDLE
 kernel.ReadConsoleOutputCharacterW.argtypes = [W.HANDLE, W.LPWSTR, W.DWORD, W.DWORD, C.POINTER(W.DWORD)]
 kernel.CloseHandle.argtypes = [W.HANDLE]
+kernel.GetConsoleMode.argtypes = [W.HANDLE, C.POINTER(W.DWORD)]
+kernel.GetConsoleMode.restype = W.BOOL
 
 class Key(C.Structure):
     _fields_ = [('down', W.BOOL), ('repeat', W.WORD), ('vk', W.WORD), ('scan', W.WORD),
@@ -32,7 +34,13 @@ input_handle = kernel.CreateFileW('CONIN$', 0xC0000000, 3, None, 3, 0, None)
 if input_handle == W.HANDLE(-1).value:
     raise C.WinError(C.get_last_error())
 try:
-    for key, expected_code, expected_output in [('\r', 0, b'Test transcript.\r\n'), ('\x1b', 130, b'')]:
+    expected_text = os.environ.get('MIKA_FIXTURE_EXPECTED_OUTPUT', 'Test transcript.')
+    during_format = bool(os.environ.get('MIKA_FIXTURE_CANCEL_DURING_FORMAT'))
+    cases = [('\x1b', 130, b'')] if during_format else [('\r', 0, (expected_text + '\r\n').encode('utf-8')), ('\x1b', 130, b'')]
+    for key, expected_code, expected_output in cases:
+        original_mode = W.DWORD()
+        if not kernel.GetConsoleMode(input_handle, C.byref(original_mode)):
+            raise C.WinError(C.get_last_error())
         handle = kernel.CreateConsoleScreenBuffer(0xC0000000, 3, None, 1, None)
         if handle == W.HANDLE(-1).value:
             raise C.WinError(C.get_last_error())
@@ -44,7 +52,7 @@ try:
                 if not kernel.ReadConsoleOutputCharacterW(handle, text, 2000, 0, C.byref(count)):
                     raise C.WinError(C.get_last_error())
                 return text[:count.value]
-            process = subprocess.Popen([str(Path(sys.argv[1]).resolve())], stdout=subprocess.PIPE, stderr=console)
+            process = subprocess.Popen([str(Path(sys.argv[1]).resolve()), *sys.argv[2:]], stdout=subprocess.PIPE, stderr=console)
             try:
                 deadline = time.monotonic() + 15
                 while 'Listening 00:' not in screen():
@@ -53,14 +61,30 @@ try:
                     time.sleep(0.02)
                 assert 'Enter: finish | Esc: cancel' in screen(), screen()
                 assert '/ 05:00' in screen(), screen()
-                event = Record(1, Event(key=Key(True, 1, ord(key), 0, key, 0)))
-                count = W.DWORD()
-                if not kernel.WriteConsoleInputW(input_handle, C.byref(event), 1, C.byref(count)):
-                    raise C.WinError(C.get_last_error())
+                def send(value):
+                    event = Record(1, Event(key=Key(True, 1, ord(value), 0, value, 0)))
+                    count = W.DWORD()
+                    if not kernel.WriteConsoleInputW(input_handle, C.byref(event), 1, C.byref(count)):
+                        raise C.WinError(C.get_last_error())
+                if during_format:
+                    send('\r')
+                    deadline = time.monotonic() + 15
+                    while 'punctuation-test: inference started' not in screen():
+                        if process.poll() is not None or time.monotonic() >= deadline:
+                            raise AssertionError(f'No native inference marker: {screen()!r}')
+                        time.sleep(0.002)
+                send(key)
                 output, _ = process.communicate(timeout=15)
                 assert (process.returncode, output) == (expected_code, expected_output)
+                restored_mode = W.DWORD()
+                if not kernel.GetConsoleMode(input_handle, C.byref(restored_mode)):
+                    raise C.WinError(C.get_last_error())
+                assert restored_mode.value == original_mode.value, (original_mode.value, restored_mode.value)
                 remaining = screen().strip('\x00 \r\n')
-                assert remaining == ('' if expected_code == 0 else 'Cancelled.'), repr(remaining)
+                if during_format:
+                    assert remaining.endswith('Cancelled.'), repr(remaining)
+                else:
+                    assert remaining == ('' if expected_code == 0 else 'Cancelled.'), repr(remaining)
             finally:
                 if process.poll() is None:
                     process.kill()

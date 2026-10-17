@@ -110,6 +110,12 @@ more memory and time than the short test, especially on baseline CPUs.
 separate build directory and `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`.
 Third-party internals are not instrumented by this option.
 
+## Unreleased punctuation prototype
+
+The double-opt-in `--punctuate` experiment, its safety limits, quality gate, native
+benchmarks, and build instructions are in [docs/punctuation.md](docs/punctuation.md).
+It is off by default and deliberately blocked from release packaging.
+
 ## Releases
 
 Update the CMake project version and manifest version together, then validate CI

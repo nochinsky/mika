@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      punctuation:
+        description: 'Also validate the unreleased punctuation prototype (never publish it)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -120,6 +125,54 @@ jobs:
             --model "$env:GITHUB_WORKSPACE/build/test-model.gguf" --sample "$env:GITHUB_WORKSPACE/build/_deps/transcribe-src/samples/jfk.wav" `
             --installer-fixture "$env:GITHUB_WORKSPACE/build/bin/Release/mika-install-fixture.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Validate opt-in punctuation prototype (Linux)
+        if: runner.os == 'Linux' && github.event_name == 'workflow_dispatch' && inputs.punctuation
+        shell: bash
+        run: |
+          cmake -S . -B build-punctuation -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
+            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=OFF \
+            -DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE="$PWD/build/_deps/transcribe-src" \
+            -DFETCHCONTENT_SOURCE_DIR_MINIAUDIO="$PWD/build/_deps/miniaudio-src" \
+            -DMIKA_TEST_MODEL="$PWD/build/test-model.gguf"
+          cmake --build build-punctuation --parallel 3
+          ctest --test-dir build-punctuation --output-on-failure
+          python3 scripts/evaluate_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
+            --assets build-punctuation/bin/punctuation --output build-punctuation/quality-report.json
+          python3 scripts/benchmark_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
+            --assets build-punctuation/bin/punctuation --output build-punctuation/resource-report.json
+      - name: Validate opt-in punctuation prototype (Windows)
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.punctuation
+        shell: pwsh
+        run: |
+          cmake -S . -B build-punctuation -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            "-DVCPKG_INSTALLED_DIR=$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
+            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=OFF `
+            "-DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE=$env:GITHUB_WORKSPACE/build/_deps/transcribe-src" `
+            "-DFETCHCONTENT_SOURCE_DIR_MINIAUDIO=$env:GITHUB_WORKSPACE/build/_deps/miniaudio-src" `
+            "-DMIKA_TEST_MODEL=$env:GITHUB_WORKSPACE/build/test-model.gguf"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build-punctuation --config Release --parallel 3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --test-dir build-punctuation -C Release --output-on-failure
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/evaluate_punctuation.py --probe build-punctuation/bin/Release/mika-punctuation-test.exe `
+            --assets build-punctuation/bin/Release/punctuation --output build-punctuation/quality-report.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/benchmark_punctuation.py --probe build-punctuation/bin/Release/mika-punctuation-test.exe `
+            --assets build-punctuation/bin/Release/punctuation --output build-punctuation/resource-report.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.punctuation
+        with:
+          name: punctuation-checks-${{ matrix.platform }}
+          path: |
+            build-punctuation/*-report.json
+            build-punctuation/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mika-${{ matrix.platform }}-x86_64

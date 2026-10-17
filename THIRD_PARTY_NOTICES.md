@@ -35,6 +35,16 @@ manifest, and include their notices under `licenses/dependencies/`:
   OpenSSL 3.x; OpenSSL 1.1.1 uses its older OpenSSL/SSLeay terms.
 - The selected compiler's C/C++ runtimes and operating-system audio libraries.
 
+The **unreleased**, opt-in punctuation prototype additionally uses
+[Edge-Punct-Casing](https://huggingface.co/frankyoujian/Edge-Punct-Casing)
+(Apache-2.0), sherpa-onnx v1.13.8 (Apache-2.0 with independently licensed SDK
+components), and its CPU ONNX Runtime 1.28.2 (MIT and third-party notices).
+It is not part of ordinary builds/releases. The developer fetcher pins all assets
+and retains their notices under the prototype's `punctuation/licenses/` directory;
+see [docs/punctuation.md](docs/punctuation.md) for provenance, source-availability
+links, and the full scope of this experiment. No model/runtime is relicensed as
+Mika's MIT code.
+
 Binary redistributors must preserve applicable dependency/model notices and comply
 with the licenses of the actual linked or bundled versions. A native-optimized
 build also has a machine-specific CPU instruction-set requirement; see README.

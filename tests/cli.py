@@ -22,7 +22,7 @@ if os.name == "posix":
     import termios
 
     class TerminalProcess:
-        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False):
+        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False, args=()):
             self.master, self.slave = pty.openpty()
             fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
             self.redirect_stderr = redirect_stderr
@@ -35,7 +35,7 @@ if os.name == "posix":
                 fcntl.ioctl(self.slave, termios.TIOCSCTTY, 0)
 
             self.process = subprocess.Popen(
-                [binary], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
+                [binary, *args], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
                 env={**os.environ, **(env or {})}, preexec_fn=session,
             )
 

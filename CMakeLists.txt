@@ -112,10 +112,48 @@ target_include_directories(mika_engine PUBLIC src)
 target_link_libraries(mika_engine PUBLIC transcribe mika_platform)
 mika_warnings(mika_engine)
 
+add_library(mika_punctuation_guard STATIC src/punctuation.c)
+target_include_directories(mika_punctuation_guard PUBLIC src)
+mika_warnings(mika_punctuation_guard)
+
 add_executable(mika src/main.c)
 target_compile_definitions(mika PRIVATE MIKA_VERSION="${PROJECT_VERSION}")
 target_link_libraries(mika PRIVATE mika_engine mika_model mika_audio)
 mika_warnings(mika)
+
+# Unreleased, double opt-in prototype. Default builds neither fetch these assets
+# nor depend on ONNX Runtime. Keep experimental builds out of release packages.
+option(MIKA_EXPERIMENTAL_PUNCTUATION "Build the unreleased --punctuate prototype" OFF)
+if(MIKA_EXPERIMENTAL_PUNCTUATION)
+    if(MIKA_RELEASE_BUNDLE)
+        message(FATAL_ERROR "Punctuation is an unreleased prototype; disable MIKA_RELEASE_BUNDLE")
+    endif()
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" OR
+       NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        message(FATAL_ERROR "Punctuation prototype requires native Linux/Windows x86-64")
+    endif()
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    if(WIN32)
+        set(punctuation_platform windows)
+    else()
+        set(punctuation_platform linux)
+    endif()
+    set(punctuation_stage "${CMAKE_BINARY_DIR}/_deps/punctuation")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/fetch_punctuation.py"
+        --stage "${punctuation_stage}" --platform "${punctuation_platform}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    add_library(mika_punctuation STATIC src/punctuation_backend.cpp)
+    target_include_directories(mika_punctuation SYSTEM PRIVATE "${punctuation_stage}/include")
+    target_link_libraries(mika_punctuation PUBLIC mika_punctuation_guard mika_model ${CMAKE_DL_LIBS})
+    mika_warnings(mika_punctuation)
+    target_compile_definitions(mika PRIVATE MIKA_EXPERIMENTAL_PUNCTUATION=1)
+    target_link_libraries(mika PRIVATE mika_punctuation)
+    add_custom_target(mika-punctuation-assets ALL
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${punctuation_stage}/payload"
+            "$<TARGET_FILE_DIR:mika>/punctuation")
+    add_dependencies(mika mika-punctuation-assets)
+    install(DIRECTORY "${punctuation_stage}/payload/" DESTINATION bin/punctuation)
+endif()
 
 install(TARGETS mika RUNTIME DESTINATION bin)
 install(FILES README.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md LICENSE DESTINATION share/doc/mika)
@@ -129,6 +167,35 @@ if(BUILD_TESTING)
     # CI can validate installed/relocated libraries; this probe is never packaged.
     install(TARGETS mika-inference-test RUNTIME DESTINATION bin
         COMPONENT Validation EXCLUDE_FROM_ALL)
+
+    add_executable(mika-punctuation-unit tests/punctuation_unit.c)
+    target_link_libraries(mika-punctuation-unit PRIVATE mika_punctuation_guard)
+    mika_warnings(mika-punctuation-unit)
+    add_test(NAME punctuation-unit COMMAND mika-punctuation-unit)
+    set_tests_properties(punctuation-unit PROPERTIES TIMEOUT 30)
+
+    if(MIKA_EXPERIMENTAL_PUNCTUATION)
+        target_compile_definitions(mika-inference-test PRIVATE MIKA_EXPERIMENTAL_PUNCTUATION=1)
+        target_link_libraries(mika-inference-test PRIVATE mika_punctuation)
+        add_dependencies(mika-inference-test mika-punctuation-assets)
+        add_executable(mika-punctuation-test tests/punctuation_probe.c)
+        target_link_libraries(mika-punctuation-test PRIVATE mika_punctuation)
+        if(WIN32)
+            target_link_libraries(mika-punctuation-test PRIVATE psapi)
+        endif()
+        mika_warnings(mika-punctuation-test)
+        add_dependencies(mika-punctuation-test mika-punctuation-assets)
+        add_executable(mika-cli-punctuation-fixture src/main.c tests/cli_stubs.c)
+        target_compile_definitions(mika-cli-punctuation-fixture PRIVATE
+            MIKA_VERSION="${PROJECT_VERSION}" MIKA_EXPERIMENTAL_PUNCTUATION=1
+            mika_model_ensure=mika_fixture_model_ensure)
+        target_link_libraries(mika-cli-punctuation-fixture PRIVATE mika_punctuation mika_pcm)
+        mika_warnings(mika-cli-punctuation-fixture)
+        add_dependencies(mika-cli-punctuation-fixture mika-punctuation-assets)
+        add_library(mika-punctuation-fake SHARED tests/punctuation_fake.cpp)
+        target_link_libraries(mika-punctuation-fake PRIVATE Threads::Threads)
+        mika_warnings(mika-punctuation-fake)
+    endif()
 
     add_executable(mika-unit tests/unit.c)
     target_link_libraries(mika-unit PRIVATE mika_model mika_pcm)
@@ -154,6 +221,15 @@ if(BUILD_TESTING)
 
     find_package(Python3 3.8 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME punctuation-fetch COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/punctuation_fetch.py")
+        set_tests_properties(punctuation-fetch PROPERTIES TIMEOUT 30)
+        if(MIKA_EXPERIMENTAL_PUNCTUATION)
+            add_test(NAME punctuation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/punctuation.py"
+                "$<TARGET_FILE:mika-punctuation-test>" "$<TARGET_FILE_DIR:mika>/punctuation"
+                "$<TARGET_FILE:mika-punctuation-fake>" "$<TARGET_FILE:mika-cli-punctuation-fixture>")
+            set_tests_properties(punctuation PROPERTIES TIMEOUT 120)
+        endif()
         add_test(NAME cli COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli.py"
             "$<TARGET_FILE:mika>" "$<TARGET_FILE:mika-cli-fixture>")
         add_test(NAME download COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/download.py"
@@ -179,9 +255,17 @@ if(BUILD_TESTING)
         set_tests_properties(real-model PROPERTIES TIMEOUT 120
             PASS_REGULAR_EXPRESSION "ask not what your country can do for you")
         if(Python3_Interpreter_FOUND)
+            if(MIKA_EXPERIMENTAL_PUNCTUATION)
+                set(punctuation_long_args --punctuate)
+                add_test(NAME real-model-punctuation COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/punctuation_audio.py"
+                    "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
+                    "${transcribe_SOURCE_DIR}/samples/jfk.wav")
+                set_tests_properties(real-model-punctuation PROPERTIES TIMEOUT 120)
+            endif()
             add_test(NAME real-model-long COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/long_audio.py"
                 "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
-                "${transcribe_SOURCE_DIR}/samples/jfk.wav")
+                "${transcribe_SOURCE_DIR}/samples/jfk.wav" ${punctuation_long_args})
             set_tests_properties(real-model-long PROPERTIES TIMEOUT 600)
         endif()
     endif()

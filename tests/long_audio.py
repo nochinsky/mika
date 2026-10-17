@@ -10,7 +10,8 @@ import sys
 import tempfile
 import wave
 
-probe, model, sample = [str(Path(value).resolve()) for value in sys.argv[1:]]
+probe, model, sample = [str(Path(value).resolve()) for value in sys.argv[1:4]]
+assert len(sys.argv) == 4 or sys.argv[4:] == ['--punctuate']
 with wave.open(sample, 'rb') as reader:
     assert (reader.getnchannels(), reader.getsampwidth(), reader.getframerate()) == (1, 2, 16000)
     speech = reader.readframes(reader.getnframes())
@@ -36,3 +37,12 @@ with tempfile.TemporaryDirectory(prefix='mika public long-audio test ') as direc
     assert text.endswith('what you can do for your country'), text[-200:]
     print(result.stderr.strip())
     print('PASS: 300-second input, all 25 public-speech segments represented, final phrase intact')
+    if sys.argv[4:]:
+        formatted = subprocess.run([probe, model, str(audio), '--punctuate'], capture_output=True,
+                                   text=True, encoding='utf-8', errors='strict', timeout=480)
+        assert formatted.returncode == 0, formatted.stderr
+        assert 'formatting=0 ' in formatted.stderr, formatted.stderr
+        assert re.sub(r'[,?.]', '', formatted.stdout).lower().split() == result.stdout.lower().split()
+        assert formatted.stdout.count('.') > 10, formatted.stdout
+        print(formatted.stderr.strip())
+        print('PASS: same 300-second audio through ASR then formatting; every raw word retained in order')

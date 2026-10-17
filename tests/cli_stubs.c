@@ -13,7 +13,7 @@
 #endif
 
 struct MikaAudio { MikaPcm pcm; };
-struct MikaEngine { MikaCancelled cancelled; void *userdata; };
+struct MikaEngine { MikaCancelled cancelled; void *userdata; char *text; };
 
 int mika_model_ensure(MikaTerminal *terminal, char **path)
 {
@@ -68,7 +68,16 @@ int mika_engine_run(MikaEngine *engine, const float *pcm, size_t frames, const c
         }
     }
     if (getenv("MIKA_FIXTURE_INFERENCE_ERROR")) { return 1; }
-    *text = getenv("MIKA_FIXTURE_SILENCE") ? "" : "Test transcript.";
+    const char *value = getenv("MIKA_FIXTURE_TEXT");
+    if (!value) { value = "Test transcript."; }
+    if (getenv("MIKA_FIXTURE_SILENCE")) { value = ""; }
+    engine->text = malloc(strlen(value) + 1);
+    if (!engine->text) { return 1; }
+    strcpy(engine->text, value);
+    *text = engine->text;
     return 0;
 }
-void mika_engine_close(MikaEngine *engine) { free(engine); }
+void mika_engine_close(MikaEngine *engine)
+{
+    if (engine) { free(engine->text); free(engine); }
+}

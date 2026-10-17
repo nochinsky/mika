@@ -14,6 +14,8 @@ parser.add_argument('--platform', choices=['linux', 'windows'], required=True)
 parser.add_argument('--version', required=True)
 parser.add_argument('--dependencies', type=Path)
 args = parser.parse_args()
+if (args.stage / 'bin' / 'punctuation').exists():
+    raise SystemExit('Refusing to package an unreleased experimental punctuation build')
 args.output.mkdir(parents=True, exist_ok=True)
 source = Path(__file__).resolve().parents[1]
 

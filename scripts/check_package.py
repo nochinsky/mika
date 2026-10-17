@@ -93,6 +93,22 @@ else:
         assert failure.returncode != 0, failure.stdout
         assert (root / 'bin/mika.exe').read_bytes() == before
         assert not list(root.parent.glob('.install.*'))
+        # A move can finish and then be interrupted before the next statement.
+        wrapper = Path(directory) / 'interrupt-swap.ps1'
+        wrapper.write_text(r'''param([string]$Installer)
+$ErrorActionPreference = 'Stop'
+function Move-Item {
+    param([string]$LiteralPath, [string]$Destination)
+    Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+    if ([IO.Path]::GetFileName($LiteralPath) -eq 'mika') { throw 'Injected interruption after directory swap.' }
+}
+& $Installer
+''')
+        failure = subprocess.run([str(x) for x in [*command[:-1], wrapper, source / 'install.ps1']],
+                                 env={**env, 'MIKA_ARCHIVE_PATH': str(old)}, capture_output=True, timeout=60)
+        assert failure.returncode != 0, failure.stdout
+        assert (root / 'bin/mika.exe').read_bytes() == before
+        assert not (root / 'previous-app').exists()
         # No-op must not read or download the archive, but still repair PATH.
         hidden = args.archive.with_name('hidden.zip')
         args.archive.rename(hidden)

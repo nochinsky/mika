@@ -126,8 +126,9 @@ try {
             $backup = Join-Path $work 'previous-app'
             Move-Item -LiteralPath $root -Destination $backup
         }
-        Move-Item -LiteralPath $candidate -Destination $root
+        # Record intent before moving: an interrupted/throwing move may already have succeeded.
         $installed = $true
+        Move-Item -LiteralPath $candidate -Destination $root
         $null = & (Join-Path $root 'bin\mika.exe') --version
         if ($LASTEXITCODE -ne 0) { throw 'Installed binary failed its startup check.' }
         if ($installedVersion -and $installedVersion -ne $candidateVersion) {
@@ -153,8 +154,9 @@ try {
     $keepRecovery = $false
     if (-not $success) {
         try {
-            if ($installed -and (Test-Path -LiteralPath $root)) { Remove-Item -LiteralPath $root -Recurse -Force }
-            if ($backup -and (Test-Path -LiteralPath $backup)) { Move-Item -LiteralPath $backup -Destination $root }
+            $hasBackup = $backup -and (Test-Path -LiteralPath $backup)
+            if (($installed -or $hasBackup) -and (Test-Path -LiteralPath $root)) { Remove-Item -LiteralPath $root -Recurse -Force }
+            if ($hasBackup) { Move-Item -LiteralPath $backup -Destination $root }
         } catch {
             $keepRecovery = $true
             Write-Warning "Could not restore automatically. Recovery files retained at $work. Close running Mika processes."

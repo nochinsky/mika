@@ -38,7 +38,7 @@ success=0
 cleanup() {
     local status=$?
     if (( !success )); then
-        if (( installed )) && ! rm -rf -- "$root"; then
+        if { (( installed )) || [[ -e $backup || -L $backup ]]; } && ! rm -rf -- "$root"; then
             printf 'mika: recovery files retained at %s\n' "$work" >&2
             return 1
         fi
@@ -97,8 +97,9 @@ else
     [[ $actual == "mika ${candidate_version#v}" ]] || fail 'Package version does not match its binary.'
     printf '%s\n' "$expected" > "$candidate/ARCHIVE_SHA256"
     if [[ -e $root || -L $root ]]; then mv -- "$root" "$backup"; fi
-    mv -- "$candidate" "$root"
+    # Mark intent before the move: a signal can arrive immediately after it.
     installed=1
+    mv -- "$candidate" "$root"
     "$root/bin/mika" --version >/dev/null || fail 'Installed binary failed its startup check.'
     if [[ -n $installed_version && $installed_version != "$candidate_version" ]]; then
         message="Updated Mika ${installed_version#v} -> ${candidate_version#v}."

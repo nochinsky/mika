@@ -132,6 +132,30 @@ shutil.copyfile(source, sys.argv[sys.argv.index('--output') + 1])
         self.assertEqual((self.root / 'VERSION').read_text(), '1.2.3\n')
         self.assertEqual(subprocess.check_output([self.home / '.local/bin/mika', '--version']), b'mika 1.2.3\n')
 
+    def test_interruption_at_directory_swap_restores_old_version(self):
+        self.install()
+        self.package('1.2.4')
+        tools = Path(self.scratch.name) / 'swap-tools'
+        tools.mkdir()
+        real_move = shutil.which('mv')
+        stub = tools / 'mv'
+        stub.write_text(f'''#!{sys.executable}
+import os, signal, subprocess, sys
+subprocess.run([{real_move!r}, *sys.argv[1:]], check=True)
+source, destination = sys.argv[-2:]
+if ((os.environ['SWAP_POINT'] == 'backup' and source == {str(self.root)!r}) or
+    (os.environ['SWAP_POINT'] == 'replacement' and source.endswith('/mika') and destination == {str(self.root)!r})):
+    os.kill(os.getppid(), signal.SIGTERM)
+''')
+        stub.chmod(0o755)
+        self.env['PATH'] = str(tools) + os.pathsep + os.environ['PATH']
+        for point in ('backup', 'replacement'):
+            with self.subTest(point=point):
+                self.env['SWAP_POINT'] = point
+                self.install(success=False)
+                self.assertEqual((self.root / 'VERSION').read_text(), '1.2.3\n')
+                self.assertFalse((self.root / 'previous-app').exists())
+
     def test_does_not_overwrite_an_unrelated_command(self):
         command = self.home / '.local/bin/mika'
         command.parent.mkdir(parents=True)

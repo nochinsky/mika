@@ -136,6 +136,17 @@ repeated public speech text, not a natural five-minute dictation sample. These
 numbers include integrity checks and the prototype's actual lazy-loading path;
 they supersede the earlier bare-C-API probe's smaller process-RAM figures.
 
+Native CI also measured the complete formatting stage (five fresh processes):
+
+| Host | 18 words: time / process peak | 748 words: time / process peak |
+| --- | --- | --- |
+| Ubuntu 22.04 CI | 61 ms / 45 MiB | 100 ms / 61 MiB |
+| Windows Server 2022 CI | 101 ms / 39 MiB | 145 ms / 55 MiB |
+
+These are different machines/OS memory-accounting systems, not an OS performance
+comparison. Windows uses peak working set. Payloads including notices measured
+38,766,412 bytes on Linux and 29,267,539 bytes on Windows.
+
 The model and vocabulary occupy 7,639,930 bytes combined. The untrimmed Linux CPU
 runtime and C API libraries add 30,652,665 bytes: **38.3 MB uncompressed before
 notices**. Smaller custom runtimes might reduce this, but no savings are assumed.
@@ -158,6 +169,21 @@ Native CI can be requested with workflow **Build and test**, input
 `punctuation=true`. It builds/tests ordinary releases first, then the opt-in
 prototype on Ubuntu 22.04 and Windows Server 2022, and uploads **reports only** for
 the prototype. It never publishes a punctuation release or prototype binary.
+
+[Native validation run 39029275935](https://github.com/nochinsky/mika/actions/runs/39029275935)
+passed eight ordinary-build suites plus ten opt-in prototype suites **on each
+platform**, including real public-speech formatting, full five-minute input,
+asset/exception fallback, relocated Unicode paths, and Windows console cancellation.
+Both platforms reproduced the same failed quality gate; engineering success did
+not promote the candidate to default. Local ASan/UBSan also passed all seven
+configured suites, including the real native formatter and failure-injection
+paths, without sanitizer suppressions. Third-party libraries themselves are not
+instrumented by Mika's sanitizer option.
+
+The first native attempt exposed scalar-build timeouts, not a punctuation failure;
+its duration tests were retained unchanged and passed after runner-local CPU
+tuning. No live microphone or natural five-minute dictation was used in these
+checks. The public installer/release remains v0.1.2 and main is unchanged.
 
 ## Provenance and licensing
 

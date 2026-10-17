@@ -2,7 +2,7 @@
 
 Speak. Press **Enter**. Get text.
 
-A small, offline English speech-to-text utility for your terminal.
+Fast, offline English dictation for AI-agent prompts and everyday terminal use.
 No account, clipboard access, background service, or setup wizard.
 
 ## Install
@@ -33,8 +33,13 @@ Speak after **Listening**, then press **Enter** to finish. **Esc / Ctrl+C** canc
 Mika uses your system's default microphone. Recordings automatically finish at
 **5 minutes**. Press Enter sooner whenever you're done.
 
-The first run asks before downloading the **279 MB** speech model. After that,
-recognition works offline. Your audio stays in memory and is never uploaded or saved.
+Punctuation/capitalization is automatic. Use `mika --raw` to skip it. Formatting
+never rewrites transcript words, but speech recognition and punctuation can still
+be wrong—this is quick dictation, not an editor.
+
+The first run asks before downloading the **279 MB** speech model. Formatting
+assets come with the app. After that, everything works offline. Your audio stays
+in memory and is never uploaded or saved.
 
 To save the transcript instead:
 

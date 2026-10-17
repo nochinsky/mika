@@ -10,24 +10,35 @@ extern "C" {
 #define MIKA_PUNCTUATION_MAX_INPUT 32768u
 #define MIKA_PUNCTUATION_MAX_WORD 96u
 
-/* Conservative ASCII-only envelope for this experimental English backend.
- * Reject unsupported input rather than passing it to upstream's byte-wise casing.
- * Empty input is valid; no inference is needed. */
+/* Conservative ASCII-only envelope for lossless source-offset alignment.
+ * Unsupported input stays raw. Empty input is valid; no inference is needed. */
 int mika_punctuation_input_valid(const char *raw);
-/* Obvious code/path/email/numeric tokens keep their original case as well. */
+/* Obvious literals, existing camelCase and acronyms retain their source case. */
 int mika_punctuation_word_literal(const char *word, size_t length);
 /* Only ASCII case changes outside protected literals, whitespace normalization,
  * and at most one appended comma/period/question mark per existing word.
  * Original punctuation is retained. */
 int mika_punctuation_preserves_words(const char *raw, const char *candidate);
 
+typedef enum {
+    MIKA_PUNCTUATION_NONE,
+    MIKA_PUNCTUATION_INPUT,
+    MIKA_PUNCTUATION_ASSETS,
+    MIKA_PUNCTUATION_RUNTIME,
+    MIKA_PUNCTUATION_MODEL,
+    MIKA_PUNCTUATION_OUTPUT,
+    MIKA_PUNCTUATION_MEMORY
+} MikaPunctuationFailure;
+const char *mika_punctuation_failure_message(MikaPunctuationFailure failure);
+
 typedef int (*MikaPunctuationCancelled)(void *userdata);
 /* 0: caller owns *out (free). 1: use raw unchanged. 130: cancel, print nothing.
  * A NULL directory selects the 'punctuation' sibling of the running executable.
- * Does not download, save input, or print transcripts/diagnostics. */
+ * Does not download, save input, or print transcripts/diagnostics.
+ * Optional failure reason contains no input text, paths or native exception data. */
 int mika_punctuation_run(const char *directory, const char *raw,
                          MikaPunctuationCancelled cancelled, void *userdata,
-                         char **out);
+                         char **out, MikaPunctuationFailure *failure);
 
 #ifdef __cplusplus
 }

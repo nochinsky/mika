@@ -14,8 +14,6 @@ parser.add_argument('--platform', choices=['linux', 'windows'], required=True)
 parser.add_argument('--version', required=True)
 parser.add_argument('--dependencies', type=Path)
 args = parser.parse_args()
-if (args.stage / 'bin' / 'punctuation').exists():
-    raise SystemExit('Refusing to package an unreleased experimental punctuation build')
 args.output.mkdir(parents=True, exist_ok=True)
 source = Path(__file__).resolve().parents[1]
 
@@ -34,6 +32,21 @@ with tempfile.TemporaryDirectory() as temporary:
             shutil.copy2(library, root / 'lib' / library.name, follow_symlinks=False)
         if not list((root / 'lib').glob('*ggml-cpu*')):
             raise SystemExit('Missing CPU dispatch modules in installed package')
+    # Keep the existing build-prepared payload, not a second model distribution
+    # mechanism. Reject accidental private inputs/build files before copying it.
+    punctuation = args.stage / 'bin' / 'punctuation'
+    required = {'model.int8.onnx', 'sp.model'} | (
+        {'mika-fullstop.dll', 'onnxruntime.dll', 'onnxruntime_providers_shared.dll'}
+        if args.platform == 'windows' else {'libmika-fullstop.so', 'libonnxruntime.so'})
+    if not punctuation.is_dir() or not (punctuation / 'licenses').is_dir():
+        raise SystemExit('Missing installed formatting payload/notices')
+    actual = {item.name for item in punctuation.iterdir() if item.is_file()}
+    if actual != required or any(item.is_dir() and item.name != 'licenses' for item in punctuation.iterdir()):
+        raise SystemExit('Incomplete or unexpected files in formatting payload')
+    if any(not item.is_file() or item.is_symlink() or item.suffix not in {'.txt', '.md', '.yaml'}
+           for item in (punctuation / 'licenses').iterdir()):
+        raise SystemExit('Unexpected files in formatting notices')
+    shutil.copytree(punctuation, root / 'bin' / 'punctuation')
     for filename in ['LICENSE', 'README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md']:
         shutil.copy2(source / filename, root / filename)
     shutil.copytree(source / 'licenses', root / 'licenses')

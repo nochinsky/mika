@@ -2,6 +2,7 @@
 
 Uses public/synthetic text and fake audio. Never opens a microphone or downloads.
 """
+import json
 import os
 from pathlib import Path
 import re
@@ -87,11 +88,26 @@ class Native(unittest.TestCase):
                     self.assertEqual(len(original), len(restored))
             self.assertNotIn('<unk>', result.stdout)
 
+    def test_agent_prompt_word_constraints_and_literals(self):
+        cases = json.loads(Path(__file__).with_name('prompt_cases.json').read_text())
+        for raw in cases:
+            with self.subTest(raw=raw):
+                result = self.run_probe(raw)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                original, restored = raw.split(), result.stdout.split()
+                self.assertEqual(len(original), len(restored))
+                for a, b in zip(original, restored):
+                    self.assertEqual(b[:len(a)].lower(), a.lower())
+                    self.assertIn(b[len(a):], ('', ',', '.', '?'))
+                    camel = any(x.islower() and y.isupper() for x, y in zip(a, a[1:]))
+                    acronym = sum(ch.isalpha() for ch in a) >= 2 and a.isupper()
+                    if any(c in a for c in '/\\\\_@+#=0123456789') or a.startswith('-') or camel or acronym:
+                        self.assertEqual(b[:len(a)], a)
+
     def test_maximum_input_and_many_window_seams(self):
-        # Near the input limit, ending in a complete word. Every word is legal,
-        # so rejection is not an acceptable substitute for safe window bounds.
-        text = 'a ' * 16383 + 'a'
-        self.assertEqual(len(text), 32767)
+        # Exact byte limit, ending in a complete word, across many window seams.
+        text = 'a ' * 16383 + 'aa'
+        self.assertEqual(len(text), 32768)
         result = self.run_probe(text)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(words(result.stdout), text.split())
@@ -106,10 +122,12 @@ class Native(unittest.TestCase):
         for text in ('a' * 97, 'café near paris', 'hello\x1b[31m'):
             result = self.run_probe(text)
             self.assertEqual((result.returncode, result.stdout), (1, text + '\n'))
+            self.assertIn('failure=1', result.stderr)
 
     def test_missing_assets_keep_raw(self):
         result = self.run_probe(assets=self.root / 'absent')
         self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+        self.assertIn('failure=2', result.stderr)
 
     def test_unicode_relocated_assets(self):
         target = self.root / 'Real assets ü space'
@@ -137,6 +155,7 @@ class Native(unittest.TestCase):
         (target / RUNTIME[0]).unlink()
         result = self.run_probe(assets=target)
         self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+        self.assertIn('failure=3', result.stderr)
 
     def test_native_failure_and_cpp_exceptions_keep_raw(self):
         for failure in ('CREATE_NULL', 'CREATE_THROW', 'APPLY_NULL', 'APPLY_THROW', 'HUGE'):
@@ -147,6 +166,7 @@ class Native(unittest.TestCase):
         for out in ('Hello world.', 'Invented words.', SHORT + ' extra', 'Hello\x1b[31m', ''):
             result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_OUTPUT': out})
             self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'), result.stderr)
+            self.assertIn('failure=5', result.stderr)
 
     def test_case_sensitive_literals_are_independently_guarded(self):
         for raw, wrong in [('open src/main.c', 'Open SRC/main.c.'),
@@ -206,16 +226,16 @@ class Controls(unittest.TestCase):
     def tearDownClass(cls):
         cls.temporary.cleanup()
 
-    def start(self, binary=FIXTURE, punctuate=True, redirect=False, **env):
-        process = cli.TerminalProcess(binary=str(binary), args=['--punctuate'] if punctuate else [],
+    def start(self, binary=FIXTURE, raw=False, redirect=False, **env):
+        process = cli.TerminalProcess(binary=str(binary), args=['--raw'] if raw else [],
                                       env={'MIKA_FIXTURE_TEXT': SHORT, **env}, redirect_stderr=redirect)
         self.addCleanup(process.close)
         if not redirect:
             process.wait_for(b'Listening 00:')
         return process
 
-    def test_raw_default_does_not_format(self):
-        process = self.start(punctuate=False)
+    def test_raw_option_does_not_format(self):
+        process = self.start(raw=True)
         process.send(b'\r')
         self.assertEqual(process.finish(), (0, (SHORT + '\n').encode()))
         self.assertNotIn(b'Formatting', process.messages)
@@ -248,6 +268,21 @@ class Controls(unittest.TestCase):
             process.send(key)
             self.assertEqual(process.finish(), (130, b''))
 
+    def test_no_speech_default_never_prints_or_formats(self):
+        for value in ('', ' \t\n'):
+            process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT=value)
+            self.assertEqual(process.finish(), (3, b''))
+            self.assertEqual(process.diagnostics, b'No speech recognized.\n')
+
+    def test_raw_without_formatter_files_is_clean(self):
+        target = self.root / 'raw-only'
+        target.mkdir(exist_ok=True)
+        binary = target / FIXTURE.name
+        shutil.copy2(FIXTURE, binary)
+        process = self.start(binary=binary, raw=True, redirect=True, MIKA_FIXTURE_LIMIT='1')
+        self.assertEqual(process.finish(), (0, (SHORT + '\n').encode()))
+        self.assertEqual(process.diagnostics, b'')
+
     def test_backend_failure_keeps_raw(self):
         missing = self.root / 'missing'
         missing.mkdir(exist_ok=True)
@@ -256,7 +291,14 @@ class Controls(unittest.TestCase):
         process = self.start(binary=binary)
         process.send(b'\r')
         self.assertEqual(process.finish(), (0, (SHORT + '\n').encode()))
+        self.assertIn(b'formatting data is missing', process.messages)
         self.assertIn(b'keeping the raw transcript', process.messages)
+
+    def test_unsupported_text_falls_back_without_losing_unicode(self):
+        process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT='café near paris')
+        self.assertEqual(process.finish(), (0, 'café near paris\n'.encode()))
+        self.assertIn(b'text is outside formatting limits', process.diagnostics)
+        self.assertNotIn('café'.encode(), process.diagnostics)
 
     def test_cancel_during_formatter_discards_everything(self):
         target = self.root / 'slow'
@@ -281,8 +323,15 @@ class WindowsConsole(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'native Windows only')
     def test_real_formatter_classic_console(self):
         result = subprocess.run([sys.executable, str(Path(__file__).with_name('windows_console.py')),
-                                 str(FIXTURE), '--punctuate'], capture_output=True, timeout=60,
+                                 str(FIXTURE)], capture_output=True, timeout=60,
                                 env={**os.environ, 'MIKA_FIXTURE_TEXT': SHORT, 'MIKA_FIXTURE_EXPECTED_OUTPUT': EXPECTED})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(os.name == 'nt', 'native Windows only')
+    def test_no_speech_classic_console(self):
+        result = subprocess.run([sys.executable, str(Path(__file__).with_name('windows_console.py')),
+                                 str(FIXTURE)], capture_output=True, timeout=60,
+                                env={**os.environ, 'MIKA_FIXTURE_SILENCE': '1'})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipUnless(os.name == 'nt', 'native Windows only')
@@ -298,7 +347,7 @@ class WindowsConsole(unittest.TestCase):
             for name in RUNTIME:
                 shutil.copy2(FAKE, assets / name)
             result = subprocess.run([sys.executable, str(Path(__file__).with_name('windows_console.py')),
-                                     str(binary), '--punctuate'], capture_output=True, timeout=60,
+                                     str(binary)], capture_output=True, timeout=60,
                                     env={**os.environ, 'MIKA_FIXTURE_TEXT': SHORT,
                                          'MIKA_PUNCT_TEST_SLOW': '1', 'MIKA_FIXTURE_CANCEL_DURING_FORMAT': '1'})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

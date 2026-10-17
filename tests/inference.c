@@ -2,9 +2,8 @@
 #include "engine.h"
 #include "miniaudio.h"
 #include "platform.h"
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
+#include "model.h"
 #include "punctuation.h"
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,16 +34,19 @@ static uint64_t peak_rss_kib(void)
 
 int main(int argc, char **argv)
 {
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
-    int punctuate = argc == 4 && strcmp(argv[3], "--punctuate") == 0;
-    if (argc != 3 && !punctuate) {
-#else
-    if (argc != 3) {
-#endif
-        fputs("usage: mika-inference-test MODEL.gguf SAMPLE.wav\n", stderr);
+    int raw_mode = argc == 4 && strcmp(argv[3], "--raw") == 0;
+    if (argc != 3 && !raw_mode) {
+        fputs("usage: mika-inference-test MODEL.gguf SAMPLE.wav [--raw]\n", stderr);
         return 2;
     }
+    if (mika_platform_init()) { return 1; }
     double pipeline_start = mika_now();
+    int verified = mika_model_verify(argv[1], MIKA_MODEL_BYTES, MIKA_MODEL_SHA256);
+    double verified_at = mika_now();
+    if (verified) {
+        fputs("Cannot verify speech model.\n", stderr);
+        return verified == 130 ? 130 : 1;
+    }
     ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 16000);
     ma_uint64 frames = 0;
     void *pcm = NULL;
@@ -61,9 +63,9 @@ int main(int argc, char **argv)
         result = mika_engine_run(engine, pcm, (size_t)frames, &text);
     }
     double inferred = mika_now();
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
     char *raw = NULL, *formatted = NULL;
-    if (!result && punctuate && text) {
+    if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) { result = 3; }
+    if (!result && !raw_mode && text) {
         raw = malloc(strlen(text) + 1);
         if (!raw) { result = 1; }
         else {
@@ -73,25 +75,24 @@ int main(int argc, char **argv)
             ma_free(pcm, NULL);
             pcm = NULL;
             double formatting_start = mika_now();
-            int formatting = mika_punctuation_run(NULL, raw, NULL, NULL, &formatted);
+            int formatting = mika_punctuation_run(NULL, raw, NULL, NULL, &formatted, NULL);
             fprintf(stderr, "formatting=%d format_ms=%.3f\n", formatting,
                     1000.0 * (mika_now() - formatting_start));
             text = formatted ? formatted : raw;
             if (formatting == 130) { result = 130; }
         }
     }
-#endif
     if (!result) {
         if (puts(text ? text : "") == EOF || fflush(stdout) != 0) { result = 1; }
-        fprintf(stderr, "audio=%.2fs load=%.3fs inference=%.3fs\n",
-                (double)frames / 16000.0, loaded - start, inferred - loaded);
+        fprintf(stderr, "audio=%.2fs load=%.3fs inference=%.3fs verify_ms=%.3f model_ready_ms=%.3f\n",
+                (double)frames / 16000.0, loaded - start, inferred - loaded,
+                (verified_at - pipeline_start) * 1000.0,
+                ((verified_at - pipeline_start) + (loaded - start)) * 1000.0);
     }
     mika_engine_close(engine);
     ma_free(pcm, NULL);
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
     free(formatted);
     free(raw);
-#endif
     fprintf(stderr, "pipeline_ms=%.3f peak_rss_kib=%" PRIu64 "\n",
             (mika_now() - pipeline_start) * 1000.0, peak_rss_kib());
     return result;

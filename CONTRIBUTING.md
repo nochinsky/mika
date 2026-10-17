@@ -1,139 +1,128 @@
 # Building and contributing
 
-Mika is C17, with C++17 inference internals accessed through a C API. There is no
-Python runtime dependency. CMake fetches hash-pinned transcribe.cpp and miniaudio
-sources once and caches them under `build/_deps`.
+Read [GOAL.md](GOAL.md) first. Mika is a one-shot English dictation CLI, not a
+configurable speech platform. Keep changes small and preserve stdout/exit behavior.
 
-## Build locally
+## Build requirements
 
-Requires CMake **3.24+**, a C17/C++17 compiler, libcurl **7.85+**, OpenSSL/libcrypto
-**1.1.1+**, and threads. Ordinary source builds use system libraries; these are not
-standalone distribution packages.
+- x86-64 Linux or Windows; CMake **3.24+**, C17/C++17 compiler and threads.
+- libcurl **7.85+**, OpenSSL Crypto **1.1.1+** (or the pinned vcpkg manifest).
+- **Python 3.12+ and the pinned conversion requirements for development/builds**.
+  Python is never an installed-app dependency.
+
+Model preparation is intentionally unchanged: CMake fetches pinned original
+FullStop weights, reproduces and verifies INT8 conversion, and prepares a sibling
+`bin/punctuation/` payload. First builds download the 210 MB original weights,
+CPU ONNX Runtime assets and SentencePiece/transcribe.cpp/miniaudio sources.
+Verified downloads are cached under the build directory. No conversion occurs in
+normal app use. Exact provenance/versions are in [docs/punctuation.md](docs/punctuation.md).
+
+Create a local tooling environment (use an installed Python 3.12+ interpreter):
+
+```sh
+python3 -m venv build-tools
+build-tools/bin/python -m pip install -r scripts/requirements-punctuation.txt
+```
+
+On Windows use `py -3.12 -m venv build-tools`, then
+`build-tools\Scripts\python.exe -m pip install -r scripts/requirements-punctuation.txt`.
+Activation and a global execution-policy change are unnecessary.
 
 ### Linux
 
-On a recent Ubuntu/Debian system with the required dependency versions:
+Install compiler/CMake/curl/OpenSSL development dependencies using your OS tools.
+On recent Ubuntu/Debian: `build-essential cmake pkg-config libcurl4-openssl-dev
+libssl-dev`; Arch: `base-devel cmake curl openssl`. Ensure the versions above are
+met. ALSA/PulseAudio runtime libraries load dynamically; no audio development
+headers are needed.
 
 ```sh
-sudo apt-get install --no-install-recommends \
-  build-essential cmake pkg-config libcurl4-openssl-dev libssl-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMIKA_NATIVE_CPU=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMIKA_NATIVE_CPU=ON \
+  -DPython3_EXECUTABLE="$PWD/build-tools/bin/python"
 cmake --build build --parallel 8
 ./build/bin/mika
 ```
 
-Arch equivalents: `base-devel cmake curl openssl`. System ALSA or PulseAudio runtime
-libraries are loaded dynamically; audio development headers are not required.
-
-`MIKA_NATIVE_CPU=ON` tunes to your CPU. **Do not distribute this binary to unrelated
-CPUs.** Default `OFF` is a conservative baseline; release bundles use runtime CPU
-dispatch instead. All modes are CPU-only, with no GPU driver required.
+`MIKA_NATIVE_CPU=ON` tunes the speech backend to this machine: **do not distribute
+that binary to unrelated CPUs**. Default OFF is conservative; portable release
+bundles use runtime CPU dispatch instead. Everything is CPU-only.
 
 ### Windows
 
-Use Visual Studio 2022's Desktop development with C++ toolchain and
-[vcpkg](https://github.com/microsoft/vcpkg). From a developer PowerShell, adjusting
-its toolchain path:
+Use Visual Studio 2022's Desktop development with C++ toolchain and vcpkg. From a
+developer PowerShell, adjusting the vcpkg path:
 
 ```powershell
 cmake -S . -B build -A x64 `
   -DCMAKE_TOOLCHAIN_FILE=C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake `
-  -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+  "-DPython3_EXECUTABLE=$PWD/build-tools/Scripts/python.exe"
 cmake --build build --config Release --parallel 8
 .\build\bin\Release\mika.exe
 ```
 
-The root manifest pins curl/crypto dependencies. Native CI validates Windows builds,
-installed inference, installer transactions, and classic-console UI using fake audio.
-The initial release was also user-tested with a real Windows microphone and Enter.
-Permissions and audio hardware still vary between desktops.
+There is one app configuration: formatting by default, `--raw` at runtime. There
+is no experimental build switch, alternate model selector, or supported macOS/ARM
+build. Keep the `punctuation/` directory beside the executable.
 
-### macOS — source-only, unvalidated
-
-```sh
-xcode-select --install
-brew install cmake pkg-config curl openssl@3
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMIKA_NATIVE_CPU=ON \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix curl);$(brew --prefix openssl@3)"
-cmake --build build --parallel 8
-./build/bin/mika
-```
-
-Allow microphone access for your terminal. Model storage uses
-`~/Library/Application Support/Mika/models`. There is no prebuilt macOS release.
-
-### Optional source installation
-
-```sh
-cmake --install build --prefix "$HOME/.local"
-```
-
-Ensure `~/.local/bin` is on PATH; multi-configuration generators also require
-`--config Release`. This installs docs/licenses as well as the executable. A source
-installation into `~/.local/bin/mika` is not managed by the release installer; move
-that regular executable aside before switching to the installer-managed symlink.
-
-## Tests
+## Tests and measurements
 
 ```sh
 ctest --test-dir build --output-on-failure
 ```
 
-Default tests use synthetic PCM, fake audio/inference, isolated installer homes,
-and a local HTTPS server. They never record a microphone or download a model.
-Python 3.8+ is needed for richer tests; the `openssl` executable generates local
-TLS certificates. Missing optional test prerequisites are reported as skips.
+Tests use fake microphone/inference devices, synthetic PCM, isolated installer
+homes, local HTTPS, authored prompts and native formatting. They do not record a
+microphone. Build-time asset preparation uses the network; tests themselves do not.
+The `openssl` executable is needed to generate test TLS certificates.
 
-Coverage includes model integrity, bounded PCM, HTTPS and redirect failures,
-cancellation, terminal restoration, transient status erasure/narrow consoles,
-redirected output, update/no-op/repair, rollback, concurrency and model retention.
-POSIX controls use PTYs; Windows controls use a private classic console. Neither
-substitutes for a live hardware test on each desktop platform.
-
-Opt into the public JFK sample using an already cached model:
+To enable public-file speech tests using an existing verified Granite model:
 
 ```sh
 cmake -S . -B build -DMIKA_TEST_MODEL=/absolute/path/to/model.gguf
 cmake --build build --parallel 8
 ctest --test-dir build --output-on-failure
-./build/bin/mika-inference-test /path/to/model.gguf /path/to/sample.wav
-./build/bin/mika-audio-devices  # metadata only; never records
+./build/bin/mika-audio-devices  # metadata only, never records
 ```
 
-With Python and `MIKA_TEST_MODEL`, CTest runs both the short sample and
-`real-model-long`: a generated 300-second input repeating the public speech in
-25 slots. The long test checks that all slots and the final phrase are represented;
-it is not a five-minute dictation accuracy benchmark. It can use substantially
-more memory and time than the short test, especially on baseline CPUs.
+Real-model tests run raw and default-formatted public JFK audio, including a
+300-second repetition/length regression. That is not natural dictation accuracy.
+`MIKA_SANITIZERS=ON` in a separate build instruments owned code on GCC/Clang; use
+`ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`. Third-party libraries
+are not themselves instrumented. Never replace missing hardware testing with a
+claim that console fixtures prove every desktop microphone works.
 
-`MIKA_SANITIZERS=ON` instruments owned code with ASan/UBSan on GCC/Clang. Use a
-separate build directory and `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`.
-Third-party internals are not instrumented by this option.
+The scripts `evaluate_punctuation.py`, `benchmark_punctuation.py`, and
+`benchmark_pipeline.py` record style metrics, full formatting-stage cost and
+public-file pipeline cost. The pipeline probe includes the Granite checksum and
+reports model-ready timing, but does not measure actual microphone opening or
+end-to-end time to Listening. Resource scopes belong beside every published number.
+The old prose-style thresholds remain advisory; never change references just to
+turn a score green. Prompt fixtures test post-formatting preservation, not whether
+ASR heard the intended words.
 
-## Unreleased punctuation prototype
+## Installation and releases
 
-The double-opt-in `--punctuate` experiment, its safety limits, quality gate, native
-benchmarks, and build instructions are in [docs/punctuation.md](docs/punctuation.md).
-It is off by default and deliberately blocked from release packaging.
+`cmake --install build --prefix "$HOME/.local"` installs a source build and its
+formatting payload/docs/licenses; multi-config generators need `--config Release`.
+This is not an installer-managed app. Move a regular `~/.local/bin/mika` aside
+before switching to the release installer's symlink.
 
-## Releases
+For portable releases follow [.github/workflows/build.yml](.github/workflows/build.yml):
+Ubuntu 22.04/glibc 2.35 and native Windows Server 2022, pinned static curl/crypto,
+CPU-dispatched speech modules, and the existing formatter payload. A system-library
+source build is **not** a standalone release just because dispatch is enabled.
+CI validates default/raw inference after real installation/relocation, console and
+installer transactions, integrity/fallback/cancellation, and public five-minute
+processing before a matching tag may publish. No private audio or test executables
+are packaged. Formatting weights are included; the speech GGUF is not.
 
-Update the CMake project version and manifest version together, then validate CI
-and push the matching `vX.Y.Z` tag. Do not replace an already published tag.
-The workflow publishes only after both platform jobs succeed.
+For a dependency/model update: pin source and artifact identities, preserve notices
+and modification provenance, reproduce the conversion hash, run metadata/safety
+checks and both native jobs, and inspect quality/resource changes. Update security
+sensitive dependencies deliberately; do not automatically chase new speech models.
 
-Linux builds use Ubuntu 22.04 (glibc 2.35 baseline); Windows builds run natively on
-Windows Server 2022 with a static CRT. Curl/crypto are statically linked using the
-pinned vcpkg baseline; Windows HTTPS uses native Schannel. Runtime-dispatched
-inference modules ship next to Mika with relative lookup paths.
-
-CI downloads the fixed model through Mika's real downloader, transcribes the public
-JFK sample plus its five-minute length regression, installs/relocates the package
-and checks installer failure paths.
-`scripts/package.py` ships only application binaries/libraries and documentation,
-including all required notices. Model weights, build directories and private audio
-are never release assets. See `.github/workflows/build.yml` for exact commands.
-
-Keep the normal CLI small: no account, wizard, background daemon, automatic update
-check during dictation, or unnecessary stdout output. Preserve the distinction
-between Mika's [MIT license](LICENSE) and [third-party licenses](THIRD_PARTY_NOTICES.md).
+For a release: update the CMake project version and `vcpkg.json` together, update
+release notes/docs, validate both native jobs, then push the matching `vX.Y.Z` tag.
+The generated version header also supplies the downloader user-agent. Do not rewrite
+published tags. Keep original Mika MIT code separate from model/dependency licenses.

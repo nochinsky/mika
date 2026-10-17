@@ -5,8 +5,8 @@ import subprocess
 import sys
 
 probe, model, sample = [str(Path(value).resolve()) for value in sys.argv[1:]]
-raw = subprocess.run([probe, model, sample], capture_output=True, encoding='utf-8', timeout=90)
-formatted = subprocess.run([probe, model, sample, '--punctuate'], capture_output=True, encoding='utf-8', timeout=90)
+raw = subprocess.run([probe, model, sample, '--raw'], capture_output=True, encoding='utf-8', timeout=90)
+formatted = subprocess.run([probe, model, sample], capture_output=True, encoding='utf-8', timeout=90)
 assert raw.returncode == formatted.returncode == 0, raw.stderr + formatted.stderr
 assert 'formatting=0 ' in formatted.stderr, formatted.stderr
 assert re.sub(r'[,?.]', '', formatted.stdout).lower().split() == raw.stdout.lower().split()

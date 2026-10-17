@@ -1,0 +1,4 @@
+#ifndef MIKA_VERSION_H
+#define MIKA_VERSION_H
+#define MIKA_VERSION "@PROJECT_VERSION@"
+#endif

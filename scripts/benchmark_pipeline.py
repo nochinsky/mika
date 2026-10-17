@@ -2,7 +2,9 @@
 
 Five fresh processes per mode, normal filesystem caches. Includes WAV decoding,
 speech-model load/inference, optional complete formatting stage, and teardown.
-Excludes recording, console UI and the CLI's initial Granite checksum verification.
+Includes the CLI's full Granite checksum verification; excludes microphone capture
+and console UI. Model-ready timing covers checksum plus speech-engine loading,
+not microphone opening or measured end-to-end time to the Listening status.
 Reports whole-process peak RSS/Windows peak working set, not an additive RAM cost.
 Never records audio, downloads assets, or stores transcripts in the JSON report.
 """
@@ -32,8 +34,8 @@ def main():
         runs = []
         for _ in range(5):
             command = [str(args.probe.resolve()), str(args.model.resolve()), str(args.sample.resolve())]
-            if mode == 'formatted':
-                command.append('--punctuate')
+            if mode == 'raw':
+                command.append('--raw')
             result = subprocess.run(command, capture_output=True, encoding='utf-8', timeout=120)
             assert result.returncode == 0, result.stderr
             fields = dict(re.findall(r'(\w+)=([\d.]+)', result.stderr))
@@ -46,10 +48,12 @@ def main():
             else:
                 assert text == original, 'Raw inference changed between identical runs'
             runs.append({'pipeline_ms': float(fields['pipeline_ms']),
-                         'peak_rss_kib': int(fields['peak_rss_kib'])})
+                         'peak_rss_kib': int(fields['peak_rss_kib']),
+                         'model_ready_ms': float(fields['model_ready_ms'])})
         report['measurements'][mode] = {
             'runs': runs,
             'median_pipeline_ms': statistics.median(row['pipeline_ms'] for row in runs),
+            'median_model_ready_ms': statistics.median(row['model_ready_ms'] for row in runs),
             'median_process_peak_rss_kib': statistics.median(row['peak_rss_kib'] for row in runs),
         }
     args.output.parent.mkdir(parents=True, exist_ok=True)

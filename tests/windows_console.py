@@ -36,7 +36,11 @@ if input_handle == W.HANDLE(-1).value:
 try:
     expected_text = os.environ.get('MIKA_FIXTURE_EXPECTED_OUTPUT', 'Test transcript.')
     during_format = bool(os.environ.get('MIKA_FIXTURE_CANCEL_DURING_FORMAT'))
-    cases = [('\x1b', 130, b'')] if during_format else [('\r', 0, (expected_text + '\r\n').encode('utf-8')), ('\x1b', 130, b'')]
+    silent = bool(os.environ.get('MIKA_FIXTURE_SILENCE'))
+    cases = [('\x1b', 130, b'')] if during_format else [
+        ('\r', 3 if silent else 0, b'' if silent else (expected_text + '\r\n').encode('utf-8')),
+        ('\x1b', 130, b''), ('\x03', 130, b'')]
+
     for key, expected_code, expected_output in cases:
         original_mode = W.DWORD()
         if not kernel.GetConsoleMode(input_handle, C.byref(original_mode)):
@@ -84,7 +88,9 @@ try:
                 if during_format:
                     assert remaining.endswith('Cancelled.'), repr(remaining)
                 else:
-                    assert remaining == ('' if expected_code == 0 else 'Cancelled.'), repr(remaining)
+                    expected_message = 'No speech recognized.' if expected_code == 3 else (
+                        'Cancelled.' if expected_code == 130 else '')
+                    assert remaining == expected_message, repr(remaining)
             finally:
                 if process.poll() is None:
                     process.kill()

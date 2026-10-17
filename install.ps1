@@ -11,7 +11,7 @@ function Get-MikaFile([string]$Url, [string]$Destination, [long]$Limit) {
     $client = New-Object System.Net.Http.HttpClient($handler)
     $client.Timeout = [TimeSpan]::FromMinutes(10)
     $client.MaxResponseContentBufferSize = $Limit
-    $client.DefaultRequestHeaders.UserAgent.ParseAdd('Mika-Installer/0.1.1')
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd('Mika-Installer')
     try {
         $uri = [Uri]$Url
         for ($hop = 0; $hop -le 5; $hop++) {

@@ -1,6 +1,8 @@
 /build*/
 /.pi/
 *.gguf
+*.onnx
+sp.model
 *.part*
 __pycache__/
 /.vcpkg-cache/

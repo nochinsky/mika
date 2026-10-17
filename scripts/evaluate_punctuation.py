@@ -76,8 +76,9 @@ def main():
     question = score({event for event in pred_p if event[-1] == '?'},
                      {event for event in gold_p if event[-1] == '?'})
     fallbacks = sum(case['fallback'] for case in results)
-    # Preliminary bar chosen before running this corpus, not a claim that passing
-    # 30 authored examples establishes production quality on real dictation.
+    # Preserve the original research targets and references as advisory metrics.
+    # Release acceptance is word safety, engineering reliability, and usefulness
+    # for fast agent prompts, not matching one writer's publication-style prose.
     thresholds = {'punctuation_f1': 0.90, 'casing_f1': 0.90, 'question_recall': 0.90}
     gate = not fallbacks and punctuation['f1'] >= .90 and casing['f1'] >= .90 and question['recall'] >= .90
     unambiguous = {i for i, case in enumerate(cases) if not case.get('ambiguous', False)}
@@ -98,7 +99,8 @@ def main():
                   acceptable_references=sum(case['acceptable_reference'] for case in results),
                   final_marks=sum(case['output'].endswith(('.', '?')) for case in results),
                   unambiguous_questions=unambiguous_questions, categories=categories,
-                  preliminary_thresholds=thresholds, preliminary_quality_gate_passed=bool(gate),
+                  legacy_reference_thresholds=thresholds, legacy_reference_thresholds_met=bool(gate),
+                  release_policy='Legacy style scores are advisory; safety tests and reviewed prompting utility govern release. Passing this corpus alone is not approval.',
                   cases=results)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')

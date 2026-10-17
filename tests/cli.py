@@ -22,7 +22,7 @@ if os.name == "posix":
     import termios
 
     class TerminalProcess:
-        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False, args=()):
+        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False, args=('--raw',)):
             self.master, self.slave = pty.openpty()
             fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
             self.redirect_stderr = redirect_stderr
@@ -97,6 +97,9 @@ class Arguments(unittest.TestCase):
         self.assertIn(b"Enter", result.stdout)
         self.assertIn(b"5 minutes", result.stdout)
         self.assertIn(b"279 MB", result.stdout)
+        self.assertIn(b"--raw", result.stdout)
+        self.assertIn(b"3 no speech", result.stdout)
+        self.assertNotIn(b"--punctuate", result.stdout)
         self.assertEqual(result.stderr, b"")
 
     def test_version(self):
@@ -114,7 +117,7 @@ class Arguments(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
 
     def test_unknown_argument_and_removed_setup(self):
-        for args in [("--unknown",), ("setup",), ("--help", "extra")]:
+        for args in [("--unknown",), ("setup",), ("--help", "extra"), ("--punctuate",), ("--raw", "extra")]:
             result = self.run_cli(*args)
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, b"")
@@ -222,8 +225,25 @@ class Controls(unittest.TestCase):
     def test_silence_does_not_create_fake_text(self):
         process = self.start(MIKA_FIXTURE_SILENCE="1")
         process.send(b"\r")
-        self.assertEqual(process.finish(), (0, b"\n"))
+        self.assertEqual(process.finish(), (3, b""))
         self.assertIn(b"No speech recognized", process.messages)
+
+    def test_whitespace_only_is_no_speech(self):
+        process = self.start(MIKA_FIXTURE_TEXT=" \t\n")
+        process.send(b"\r")
+        self.assertEqual(process.finish(), (3, b""))
+        self.assertIn(b"No speech recognized", process.messages)
+
+    def test_agent_command_only_runs_after_a_transcript(self):
+        import shlex
+        command = f'prompt=$({shlex.quote(FIXTURE)} --raw) && printf "AGENT:%s\\n" "$prompt"'
+        for flags, expected in [({}, (0, b'AGENT:Test transcript.\n')),
+                                ({'MIKA_FIXTURE_SILENCE': '1'}, (3, b'')),
+                                ({'MIKA_FIXTURE_INFERENCE_ERROR': '1'}, (1, b''))]:
+            process = TerminalProcess(binary='/bin/bash', args=('-c', command),
+                                      env={'MIKA_FIXTURE_LIMIT': '1', **flags})
+            self.addCleanup(process.close)
+            self.assertEqual(process.finish(), expected)
 
     def test_duration_limit_is_explicit(self):
         process = TerminalProcess(env={"MIKA_FIXTURE_LIMIT": "1"})

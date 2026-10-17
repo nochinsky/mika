@@ -96,29 +96,37 @@ bool stop(MikaPunctuationCancelled cancelled, void *userdata)
 }
 
 extern "C" int mika_punctuation_run(const char *directory, const char *raw,
-    MikaPunctuationCancelled cancelled, void *userdata, char **out)
+    MikaPunctuationCancelled cancelled, void *userdata, char **out, MikaPunctuationFailure *failure)
 {
-    if (!out) { return 1; }
+    if (failure) { *failure = MIKA_PUNCTUATION_NONE; }
+    const auto fail = [failure](MikaPunctuationFailure reason) {
+        if (failure) { *failure = reason; }
+        return 1;
+    };
+    if (!out) { return fail(MIKA_PUNCTUATION_OUTPUT); }
     *out = nullptr;
+    MikaPunctuationFailure stage = MIKA_PUNCTUATION_MEMORY;
     try {
         if (stop(cancelled, userdata)) { return 130; }
-        if (!mika_punctuation_input_valid(raw)) { return 1; }
+        if (!mika_punctuation_input_valid(raw)) { return fail(MIKA_PUNCTUATION_INPUT); }
         size_t raw_length = std::strlen(raw);
         if (std::strspn(raw, " \t\r\n\v\f") == raw_length) {
             *out = static_cast<char *>(std::malloc(raw_length + 1));
             if (*out) { std::memcpy(*out, raw, raw_length + 1); }
-            return *out ? 0 : 1;
+            return *out ? 0 : fail(MIKA_PUNCTUATION_MEMORY);
         }
         fs::path base = directory ? fs::absolute(fs::u8path(directory))
                                   : executable_directory() / "punctuation";
         std::string model = (base / "model.int8.onnx").u8string();
         std::string vocab = (base / "sp.model").u8string();
+        stage = MIKA_PUNCTUATION_ASSETS;
         int a = mika_model_verify(model.c_str(), 52883510,
             "d69b2df2db21c177b8ea9086e2324796176fb5a28fa8893f9df11b79bf3fc3ec");
         int b = mika_model_verify(vocab.c_str(), 587902,
             "9e86d0263de80b3b68327a21f5350c8cdf846e4c4400253c9baf05e3d44871c3");
         if (a == 130 || b == 130 || stop(cancelled, userdata)) { return 130; }
-        if (a != MIKA_MODEL_VALID || b != MIKA_MODEL_VALID) { return 1; }
+        if (a != MIKA_MODEL_VALID || b != MIKA_MODEL_VALID) { return fail(stage); }
+        stage = MIKA_PUNCTUATION_RUNTIME;
 #ifdef _WIN32
         Library runtime(base / "onnxruntime.dll");
         Library backend(base / "mika-fullstop.dll");
@@ -130,9 +138,10 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
         auto destroy = backend.symbol<decltype(&MikaFullstopClose)>("MikaFullstopClose");
         auto apply = backend.symbol<decltype(&MikaFullstopApply)>("MikaFullstopApply");
         auto free_text = backend.symbol<decltype(&MikaFullstopFreeText)>("MikaFullstopFreeText");
+        stage = MIKA_PUNCTUATION_MODEL;
         std::unique_ptr<MikaFullstop, decltype(destroy)> punct(create(model.c_str(), vocab.c_str()), destroy);
         if (stop(cancelled, userdata)) { return 130; }
-        if (!punct) { return 1; }
+        if (!punct) { return fail(stage); }
         struct Cancellation { MikaPunctuationCancelled callback; void *data; } state{cancelled, userdata};
         auto poll = [](void *data) -> int {
             auto *s = static_cast<Cancellation *>(data);
@@ -144,15 +153,18 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
         catch (...) { if (candidate) { free_text(candidate); } throw; }
         std::unique_ptr<char, decltype(free_text)> text(candidate, free_text);
         if (code == 130 || stop(cancelled, userdata)) { return 130; }
-        if (code || !text || !mika_punctuation_preserves_words(raw, text.get())) { return 1; }
+        if (code || !text) { return fail(stage); }
+        stage = MIKA_PUNCTUATION_OUTPUT;
+        if (!mika_punctuation_preserves_words(raw, text.get())) { return fail(stage); }
         size_t length = std::strlen(text.get());
+        stage = MIKA_PUNCTUATION_MEMORY;
         *out = static_cast<char *>(std::malloc(length + 1));
-        if (!*out) { return 1; }
+        if (!*out) { return fail(stage); }
         std::memcpy(*out, text.get(), length + 1);
         return 0;
     } catch (...) {
-        /* Do not let an optional native model's C++ exception lose dictation.
+        /* Do not let a formatting model's C++ exception lose dictation.
          * Native crashes/abort/OOM-killer are not recoverable in-process. */
-        return stop(cancelled, userdata) ? 130 : 1;
+        return stop(cancelled, userdata) ? 130 : fail(stage);
     }
 }

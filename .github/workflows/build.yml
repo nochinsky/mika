@@ -7,11 +7,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      punctuation:
-        description: 'Also validate the unreleased punctuation prototype (never publish it)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -36,6 +31,12 @@ jobs:
       VCPKG_DISABLE_METRICS: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6, build tools only
+        id: python
+        with:
+          python-version: '3.12'
+      - name: Install pinned developer-only model conversion tools
+        run: python -m pip install --requirement scripts/requirements-punctuation.txt
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: dependency-cache
         with:
@@ -69,42 +70,44 @@ jobs:
           git -C "$env:RUNNER_TEMP/mika-vcpkg" checkout --detach FETCH_HEAD
           & "$env:RUNNER_TEMP/mika-vcpkg/bootstrap-vcpkg.bat" -disableMetrics
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Configure and build (Linux, glibc 2.35 baseline)
+      - name: Build portable production package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_INSTALL_LIBDIR=lib \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DMIKA_RELEASE_BUNDLE=ON -DMIKA_NATIVE_CPU=OFF \
             -DMIKA_TEST_MODEL="$PWD/build/test-model.gguf"
           cmake --build build --parallel 3
-      - name: Configure and build (Windows, static CRT)
+      - name: Build portable production package (Windows, static CRT)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cmake -S . -B build -A x64 `
             "-DCMAKE_TOOLCHAIN_FILE=$env:RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" `
             -DMIKA_RELEASE_BUNDLE=ON -DMIKA_NATIVE_CPU=OFF `
             "-DMIKA_TEST_MODEL=$env:GITHUB_WORKSPACE/build/test-model.gguf"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cmake --build build --config Release --parallel 3
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Test real model and package (Linux)
+      - name: Test and package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          python3 scripts/fetch_test_model.py build/bin/mika-download-test "$PWD/build/test-model.gguf"
+          python scripts/fetch_test_model.py build/bin/mika-download-test "$PWD/build/test-model.gguf"
           ctest --test-dir build --output-on-failure
           cmake --install build --prefix "$PWD/stage"
           cmake --install build --prefix "$PWD/stage" --component Validation
           version=$(sed -n 's/^project(mika VERSION \([^ ]*\).*/v\1/p' CMakeLists.txt)
-          python3 scripts/package.py --stage stage --output dist --platform linux --version "$version" \
+          python scripts/package.py --stage stage --output dist --platform linux --version "$version" \
             --dependencies build/vcpkg_installed/x64-linux/share
-          python3 scripts/check_package.py --stage stage --archive dist/mika-linux-x86_64.tar.gz \
+          python scripts/check_package.py --stage stage --archive dist/mika-linux-x86_64.tar.gz \
             --model "$PWD/build/test-model.gguf" --sample "$PWD/build/_deps/transcribe-src/samples/jfk.wav"
-      - name: Test real model and package (Windows)
+      - name: Test and package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -122,78 +125,32 @@ jobs:
             --dependencies build/vcpkg_installed/x64-windows-static/share
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/check_package.py --stage stage --archive dist/mika-windows-x86_64.zip `
-            --model "$env:GITHUB_WORKSPACE/build/test-model.gguf" --sample "$env:GITHUB_WORKSPACE/build/_deps/transcribe-src/samples/jfk.wav" `
-            --installer-fixture "$env:GITHUB_WORKSPACE/build/bin/Release/mika-install-fixture.exe"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6, prototype conversion only
-        if: github.event_name == 'workflow_dispatch' && inputs.punctuation
-        with:
-          python-version: '3.12'
-      - name: Install developer-only model conversion tools
-        if: github.event_name == 'workflow_dispatch' && inputs.punctuation
-        run: python -m pip install --requirement scripts/requirements-punctuation.txt
-      - name: Validate opt-in punctuation prototype (Linux)
-        if: runner.os == 'Linux' && github.event_name == 'workflow_dispatch' && inputs.punctuation
-        shell: bash
-        run: |
-          cmake -S . -B build-punctuation -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
-            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON \
-            -DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE="$PWD/build/_deps/transcribe-src" \
-            -DFETCHCONTENT_SOURCE_DIR_MINIAUDIO="$PWD/build/_deps/miniaudio-src" \
-            -DMIKA_TEST_MODEL="$PWD/build/test-model.gguf"
-          cmake --build build-punctuation --parallel 3
-          ctest --test-dir build-punctuation --output-on-failure
-          python3 scripts/evaluate_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
-            --assets build-punctuation/bin/punctuation --output build-punctuation/quality-report.json
-          python3 scripts/evaluate_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
-            --assets build-punctuation/bin/punctuation --corpus tests/punctuation_holdout.json \
-            --output build-punctuation/holdout-report.json
-          python3 scripts/benchmark_punctuation.py --probe build-punctuation/bin/mika-punctuation-test \
-            --assets build-punctuation/bin/punctuation --output build-punctuation/resource-report.json
-          python3 scripts/benchmark_pipeline.py --probe build-punctuation/bin/mika-inference-test \
-            --model "$PWD/build/test-model.gguf" --sample "$PWD/build/_deps/transcribe-src/samples/jfk.wav" \
-            --output build-punctuation/pipeline-report.json
-      - name: Validate opt-in punctuation prototype (Windows)
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.punctuation
-        shell: pwsh
-        run: |
-          cmake -S . -B build-punctuation -A x64 `
-            "-DCMAKE_TOOLCHAIN_FILE=$env:RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            "-DVCPKG_INSTALLED_DIR=$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
-            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON `
-            "-DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE=$env:GITHUB_WORKSPACE/build/_deps/transcribe-src" `
-            "-DFETCHCONTENT_SOURCE_DIR_MINIAUDIO=$env:GITHUB_WORKSPACE/build/_deps/miniaudio-src" `
-            "-DMIKA_TEST_MODEL=$env:GITHUB_WORKSPACE/build/test-model.gguf"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cmake --build build-punctuation --config Release --parallel 3
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          ctest --test-dir build-punctuation -C Release --output-on-failure
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/evaluate_punctuation.py --probe build-punctuation/bin/Release/mika-punctuation-test.exe `
-            --assets build-punctuation/bin/Release/punctuation --output build-punctuation/quality-report.json
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/evaluate_punctuation.py --probe build-punctuation/bin/Release/mika-punctuation-test.exe `
-            --assets build-punctuation/bin/Release/punctuation --corpus tests/punctuation_holdout.json `
-            --output build-punctuation/holdout-report.json
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/benchmark_punctuation.py --probe build-punctuation/bin/Release/mika-punctuation-test.exe `
-            --assets build-punctuation/bin/Release/punctuation --output build-punctuation/resource-report.json
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/benchmark_pipeline.py --probe build-punctuation/bin/Release/mika-inference-test.exe `
             --model "$env:GITHUB_WORKSPACE/build/test-model.gguf" `
             --sample "$env:GITHUB_WORKSPACE/build/_deps/transcribe-src/samples/jfk.wav" `
-            --output build-punctuation/pipeline-report.json
+            --installer-fixture "$env:GITHUB_WORKSPACE/build/bin/Release/mika-install-fixture.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Record formatting and resource measurements
+        shell: bash
+        run: |
+          bin=build/bin
+          suffix=''
+          if [[ "$RUNNER_OS" == Windows ]]; then bin=build/bin/Release; suffix=.exe; fi
+          python scripts/evaluate_punctuation.py --probe "$bin/mika-punctuation-test$suffix" \
+            --assets "$bin/punctuation" --output build/quality-report.json
+          python scripts/evaluate_punctuation.py --probe "$bin/mika-punctuation-test$suffix" \
+            --assets "$bin/punctuation" --corpus tests/punctuation_holdout.json --output build/holdout-report.json
+          python scripts/benchmark_punctuation.py --probe "$bin/mika-punctuation-test$suffix" \
+            --assets "$bin/punctuation" --output build/resource-report.json
+          python scripts/benchmark_pipeline.py --probe "$bin/mika-inference-test$suffix" \
+            --model "$PWD/build/test-model.gguf" --sample "$PWD/build/_deps/transcribe-src/samples/jfk.wav" \
+            --output build/pipeline-report.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.punctuation
+        if: always()
         with:
-          name: punctuation-checks-${{ matrix.platform }}
+          name: checks-${{ matrix.platform }}
           path: |
-            build-punctuation/*-report.json
-            build-punctuation/Testing/Temporary/LastTest.log
+            build/*-report.json
+            build/Testing/Temporary/LastTest.log
           if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

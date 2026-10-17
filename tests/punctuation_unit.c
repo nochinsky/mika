@@ -17,6 +17,7 @@ int main(void)
         {"src/main.c", "src/main.c."}, {"mika_audio_stop", "mika_audio_stop."},
         {"jane@example.com", "jane@example.com"}, {"c++ c#", "c++ c#."},
         {"hello...", "Hello..."}, {"version1", "version1."},
+        {"fooBar API MikaEngine", "fooBar, API MikaEngine."},
     };
     const char *bad[][2] = {
         {"hello world", "Hello there world."}, {"hello world", "Hello."},
@@ -30,6 +31,7 @@ int main(void)
         {"src/main.c", "SRC/main.c"}, {"mika_audio_stop", "Mika_audio_stop"},
         {"jane@example.com", "Jane@example.COM"}, {"c++", "C++"},
         {"--verbose", "--Verbose"}, {"version1", "Version1"},
+        {"fooBar", "Foobar"}, {"API", "Api"}, {"MikaEngine", "Mikaengine"},
     };
     for (size_t i = 0; i < sizeof(good)/sizeof(good[0]); ++i) {
         CHECK(mika_punctuation_preserves_words(good[i][0], good[i][1]));

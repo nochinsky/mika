@@ -1,4 +1,5 @@
 #include "model.h"
+#include "mika_version.h"
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
@@ -161,7 +162,7 @@ int mika_model_download(const char *url, const char *destination, uint64_t expec
     SET_OPTION(CURLOPT_TIMEOUT, 3600L);
     SET_OPTION(CURLOPT_NOSIGNAL, 1L);
     SET_OPTION(CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)expected_bytes);
-    SET_OPTION(CURLOPT_USERAGENT, "mika/0.1.0");
+    SET_OPTION(CURLOPT_USERAGENT, "mika/" MIKA_VERSION);
     SET_OPTION(CURLOPT_WRITEFUNCTION, download_write);
     SET_OPTION(CURLOPT_WRITEDATA, &download);
     SET_OPTION(CURLOPT_NOPROGRESS, 0L);

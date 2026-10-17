@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from evaluate_punctuation import events
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
@@ -32,8 +33,17 @@ def run(command, **kwargs):
 
 assert run([args.stage / 'bin' / ('mika' + exe), '--version']).strip() == expected_version
 # This installed probe has the same RPATH/DLL lookup location as the real app.
-text = run([args.stage / 'bin' / ('mika-inference-test' + exe), args.model, args.sample])
-assert 'ask not what your country can do for you' in text, text
+def inference(directory):
+    probe = directory / ('mika-inference-test' + exe)
+    raw = run([probe, args.model, args.sample, '--raw'])
+    assert 'ask not what your country can do for you' in raw, raw
+    result = subprocess.run([str(x) for x in [probe, args.model, args.sample]],
+                            capture_output=True, encoding='utf-8', timeout=120)
+    assert result.returncode == 0 and 'formatting=0 ' in result.stderr, result.stderr
+    events(raw, result.stdout)
+    assert 'Americans' in result.stdout, result.stdout
+
+inference(args.stage / 'bin')
 
 if not windows:
     for binary in [args.stage / 'bin/mika', *(args.stage / 'lib').glob('*.so*')]:
@@ -52,7 +62,7 @@ if not windows:
         binary_dir = Path(directory) / 'data/mika/app/bin'
         probe = binary_dir / 'mika-inference-test'
         shutil.copy2(args.stage / 'bin/mika-inference-test', probe)
-        assert 'ask not what your country' in run([probe, args.model, args.sample])
+        inference(binary_dir)
 else:
     # This integration check is for a disposable native CI runner, not a user's PC.
     if os.environ.get('GITHUB_ACTIONS') != 'true':
@@ -128,5 +138,5 @@ function Move-Item {
     assert run([root / 'bin/mika.exe', '--version']).strip() == expected_version
     probe = root / 'bin/mika-inference-test.exe'
     shutil.copy2(args.stage / 'bin/mika-inference-test.exe', probe)
-    assert 'ask not what your country' in run([probe, args.model, args.sample])
-print('PASS: staged/relocated inference, dependencies, checksummed install, and startup')
+    inference(root / 'bin')
+print('PASS: staged/relocated raw and formatted inference, dependencies, checksummed install, and startup')

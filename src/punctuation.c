@@ -1,6 +1,19 @@
 #include "punctuation.h"
 #include <string.h>
 
+const char *mika_punctuation_failure_message(MikaPunctuationFailure failure)
+{
+    switch (failure) {
+    case MIKA_PUNCTUATION_INPUT: return "text is outside formatting limits";
+    case MIKA_PUNCTUATION_ASSETS: return "formatting data is missing, unreadable or corrupted";
+    case MIKA_PUNCTUATION_RUNTIME: return "formatting runtime is unavailable";
+    case MIKA_PUNCTUATION_MODEL: return "formatting inference failed";
+    case MIKA_PUNCTUATION_OUTPUT: return "formatting result was rejected";
+    case MIKA_PUNCTUATION_MEMORY: return "not enough memory for formatting";
+    default: return "formatting is unavailable";
+    }
+}
+
 static int space(unsigned char ch)
 {
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\v' || ch == '\f';
@@ -34,11 +47,18 @@ int mika_punctuation_word_literal(const char *word, size_t length)
     while (length && (word[length - 1] == '.' || word[length - 1] == ',' ||
            word[length - 1] == '?' || word[length - 1] == '!' || word[length - 1] == ':' ||
            word[length - 1] == ';' || word[length - 1] == '"' || word[length - 1] == '\'')) { --length; }
+    size_t capitals = 0, letters = 0;
     for (size_t i = 0; i < length; ++i) {
         char ch = word[i];
         if ((ch >= '0' && ch <= '9') || strchr("/\\_@+#=.:<>[]{}$%&|^~`", ch)) { return 1; }
+        if (ch >= 'A' && ch <= 'Z') { ++capitals; ++letters; }
+        if (ch >= 'a' && ch <= 'z') {
+            ++letters;
+            /* Existing camelCase/PascalCase is information, not a brand guess. */
+            if (i + 1 < length && word[i + 1] >= 'A' && word[i + 1] <= 'Z') { return 1; }
+        }
     }
-    return 0;
+    return letters >= 2 && capitals == letters;
 }
 
 int mika_punctuation_preserves_words(const char *raw, const char *candidate)

@@ -3,26 +3,17 @@
 #include "model.h"
 #include "pcm.h"
 #include "platform.h"
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
 #include "punctuation.h"
-#endif
+#include "mika_version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef MIKA_VERSION
-#define MIKA_VERSION "dev"
-#endif
-
 static void help(void)
 {
     fputs("Mika " MIKA_VERSION " - offline English speech to text\n\n"
-          "Usage: mika [--help | --version"
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
-          " | --punctuate"
-#endif
-          "]\n\n"
+          "Usage: mika [--raw | --help | --version]\n\n"
           "Run mika, speak after 'Listening', then press Enter to transcribe.\n"
           "Esc or Ctrl+C cancels without printing a transcript.\n"
           "The default system microphone is used; select it in your OS sound settings.\n", stdout);
@@ -34,10 +25,9 @@ static void help(void)
           "Only the transcript goes to stdout; status messages go to stderr.\n"
           "Example: mika > notes.txt\n\n"
           "Model: " MIKA_MODEL_FILE "\n", stdout);
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
-    fputs("\nExperimental: --punctuate adds offline punctuation/casing. Raw is the default.\n"
-          "Formatting may be wrong; failures keep the original transcript.\n", stdout);
-#endif
+    fputs("\nOffline punctuation/casing is on by default. --raw skips formatting.\n"
+          "Formatting may be wrong; failures keep the original transcript.\n"
+          "Exit codes: 0 transcript, 1 failure, 2 arguments, 3 no speech, 130 cancelled.\n", stdout);
     char *directory = mika_model_directory();
     if (directory) { printf("Model directory: %s\n", directory); free(directory); }
 }
@@ -68,12 +58,8 @@ int main(int argc, char **argv)
         puts("mika " MIKA_VERSION);
         return fflush(stdout) != 0 || ferror(stdout) ? 1 : 0;
     }
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
-    int punctuate = argc == 2 && strcmp(argv[1], "--punctuate") == 0;
-    if (argc != 1 && !punctuate) {
-#else
-    if (argc != 1) {
-#endif
+    int raw = argc == 2 && strcmp(argv[1], "--raw") == 0;
+    if (argc != 1 && !raw) {
         fputs("mika: unexpected argument. Run 'mika --help' for usage.\n", stderr);
         return 2;
     }
@@ -92,9 +78,7 @@ int main(int argc, char **argv)
     MikaAudio *audio = NULL;
     char *model_path = NULL;
     const char *text = NULL;
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
     char *raw_copy = NULL, *formatted = NULL;
-#endif
     int result = 1;
     int limit_reached = 0;
     mika_terminal_discard_input(terminal);
@@ -169,12 +153,13 @@ int main(int argc, char **argv)
     }
     result = mika_engine_run(engine, mika_audio_samples(audio), mika_audio_frames(audio), &text);
     if (cancel_requested(&cancel)) { result = 130; }
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
-    if (!result && punctuate && text && text[0]) {
+    if (!result && !raw && text && text[strspn(text, " \t\r\n\v\f")]) {
         int formatting = 1;
+        MikaPunctuationFailure failure = MIKA_PUNCTUATION_INPUT;
         if (mika_punctuation_input_valid(text)) {
             size_t bytes = strlen(text) + 1;
             raw_copy = malloc(bytes);
+            failure = MIKA_PUNCTUATION_MEMORY;
             if (raw_copy) {
                 memcpy(raw_copy, text, bytes);
                 text = raw_copy;
@@ -183,19 +168,19 @@ int main(int argc, char **argv)
                 engine = NULL;
                 mika_audio_close(audio);
                 audio = NULL;
-                mika_status_show("Formatting (experimental)...");
-                formatting = mika_punctuation_run(NULL, text, cancel_requested, &cancel, &formatted);
+                mika_status_show("Formatting...");
+                formatting = mika_punctuation_run(NULL, text, cancel_requested, &cancel, &formatted, &failure);
             }
         }
         if (!formatting) { text = formatted; }
         else if (formatting == 130) { result = 130; }
         else {
             mika_status_clear();
-            fputs("mika: experimental formatting unavailable or unsafe; keeping the raw transcript.\n", stderr);
+            fprintf(stderr, "mika: %s; keeping the raw transcript.\n",
+                    mika_punctuation_failure_message(failure));
         }
         if (cancel_requested(&cancel)) { result = 130; }
     }
-#endif
 done:
     mika_audio_close(audio);
     mika_status_clear();
@@ -204,17 +189,18 @@ done:
     free(model_path);
     if (mika_cancelled(NULL)) { result = 130; }
     if (result == 130) { fputs("Cancelled.\n", stderr); }
+    if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) {
+        fputs("No speech recognized.\n", stderr);
+        result = 3;
+    }
     if (!result) {
-        if (!text || !text[0]) { fputs("No speech recognized.\n", stderr); }
-        if (puts(text ? text : "") == EOF || fflush(stdout) != 0) {
+        if (puts(text) == EOF || fflush(stdout) != 0) {
             fputs("mika: cannot write the transcript to stdout.\n", stderr);
             result = 1;
         }
     }
     mika_engine_close(engine);
-#ifdef MIKA_EXPERIMENTAL_PUNCTUATION
     free(formatted);
     free(raw_copy);
-#endif
     return result;
 }

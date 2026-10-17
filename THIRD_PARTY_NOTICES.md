@@ -35,15 +35,15 @@ manifest, and include their notices under `licenses/dependencies/`:
   OpenSSL 3.x; OpenSSL 1.1.1 uses its older OpenSSL/SSLeay terms.
 - The selected compiler's C/C++ runtimes and operating-system audio libraries.
 
-The **unreleased**, opt-in punctuation prototype additionally uses the English
+Offline punctuation/casing additionally uses the English
 [FullStop/truecase model](https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english)
 (Apache-2.0; modified by pinned INT8 conversion), native SentencePiece v0.2.1
 (Apache-2.0 with bundled protobuf-lite/Abseil/Darts notices), and CPU ONNX Runtime
 1.28.2 (MIT and third-party notices). Only the runtime is extracted from the
 sherpa-onnx v1.13.8 SDK; no Sherpa inference library is deployed. The native bridge
 and source-preserving renderer are original Mika code.
-It is not part of ordinary builds/releases. The developer fetcher pins all assets
-and retains their notices under the prototype's `punctuation/licenses/` directory,
+The developer fetcher pins all assets and retains their notices under the
+application's `punctuation/licenses/` directory,
 including the model card and explicit modification notice. Python conversion
 packages are developer tooling, not deployed runtime dependencies. See
 [docs/punctuation.md](docs/punctuation.md) for provenance, source-availability

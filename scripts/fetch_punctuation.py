@@ -1,6 +1,6 @@
-"""Developer-only pinned assets for the unreleased English FullStop prototype.
+"""Build-time pinned assets for the fixed English FullStop formatter.
 
-Opt-in builds fetch original weights and quantize locally with pinned development
+Builds fetch original weights and quantize locally with pinned development
 packages. No Python runtime, conversion, downloads or uploads during dictation.
 """
 import argparse
@@ -159,7 +159,7 @@ def main():
         if destination.exists():
             shutil.rmtree(destination)
         payload.rename(destination)
-    print('Pinned FullStop prototype assets ready:', args.stage / 'payload', flush=True)
+    print('Pinned FullStop assets ready:', args.stage / 'payload', flush=True)
 
 
 if __name__ == '__main__':

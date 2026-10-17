@@ -17,8 +17,12 @@ installed version. Status uses a single transient stderr line, including in clas
 Windows consoles. When stderr is redirected, routine status is omitted; errors and
 first-download consent remain visible as text. Only the transcript goes to stdout.
 
-The model is English-only and may produce lowercase, unpunctuated text. There are
-no partial transcripts, timestamps, translation, diarization, or transcript history.
+Speech recognition is English-only. Mika adds offline punctuation/capitalization
+by default; `mika --raw` prints the unformatted ASR transcript instead. Formatting
+preserves words/order and obvious literals, but is not an editor and cannot fix
+misheard words. Unsupported text or ordinary formatting errors retain the raw text
+with a short stderr warning. See [formatting details](punctuation.md).
+There are no partial transcripts, timestamps, translation, diarization, or history.
 Cancellation during synchronous loading/inference may wait for that operation to
 return; cancelled work never prints a partial transcript.
 
@@ -44,20 +48,22 @@ New archives are checksum-verified, extracted into a scratch directory, and chec
 before and after moving into place. An update failure restores the previous app;
 if restoration itself fails, recovery files are retained rather than deleted.
 Concurrent installers are rejected. Close Mika before updating, especially on Windows.
-Model files are stored separately and are never removed by application updates.
+The separately cached speech model is never removed by application updates.
+Formatting data/runtime remain bundled with the app and are replaced with it.
 There is no background updater or automatic network check when you launch Mika.
 
 Advanced environment variables, identical on both installers:
 
 | Variable | Purpose |
 | --- | --- |
-| `MIKA_VERSION` | Explicit release tag, e.g. `v0.1.2`, instead of latest. Can deliberately select an older version. |
+| `MIKA_VERSION` | Explicit release tag, e.g. `v0.2.0`, instead of latest. Can deliberately select an older version. |
 | `MIKA_REINSTALL=1` | Force a clean reinstall even when the release is current. |
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive with an adjacent `.sha256` file. |
 
 Manual archives are on [GitHub Releases](https://github.com/nochinsky/mika/releases).
-No installation step downloads model weights or opens the microphone. You can
-inspect either installer before executing it. Release archives are not independently
+Archives include the fixed formatting weights/runtime, but not the 279 MB speech
+model. Installers never open a microphone or separately fetch the speech model.
+You can inspect either installer before executing it. Release archives are not independently
 signed; adjacent checksums detect corruption, not a compromised publisher.
 No machine-wide PowerShell execution-policy change is made.
 
@@ -84,7 +90,7 @@ The fixed model is **Granite Speech 5.0 470M TurboCTC Q4_K_M**, the standard
 [`src/model.h`](../src/model.h). Model updates are deliberate source changes,
 not a background download of a moving model version.
 
-Every launch verifies the model's size and checksum. Its initial download requires
+Every dictation launch verifies the speech model's size and checksum. Its initial download requires
 consent, HTTPS/certificate validation, bounded transfers and verified atomic
 replacement. Failed transfers are discarded. A forcibly killed download can leave
 `.part.*` files; remove them only when no download is running. The model directory
@@ -100,5 +106,34 @@ by opt-in model tests; this is not a long-form accuracy benchmark. Sessions beyo
 five minutes still need a separate chunking/boundary design rather than an
 unbounded buffer.
 
-Exit codes: **0** success/help/version; **1** failure; **2** invalid arguments;
-**130** cancellation or declined model download.
+## Scripting contract
+
+| Exit | Meaning | stdout |
+| --- | --- | --- |
+| **0** | Transcript (formatted or safe raw fallback), help, or version | Requested text |
+| **1** | Failure | Empty during dictation |
+| **2** | Invalid arguments | Empty |
+| **3** | No speech recognized, including empty/whitespace-only output | Empty |
+| **130** | Cancellation or declined model download | Empty |
+
+A formatting fallback is still a successful transcript, not an empty/error result.
+For an agent wrapper, check success before sending anything. For example:
+
+```sh
+if prompt="$(mika)"; then
+    # Pass "$prompt" to your preferred agent here.
+    printf '%s\n' "$prompt"
+fi
+```
+
+```powershell
+$text = mika
+if ($LASTEXITCODE -eq 0) {
+    # Pass $text to your preferred agent here.
+    $text
+}
+```
+
+No agent command, clipboard action, or automatic submission is built into Mika.
+As with other CLIs, an output-device failure can occur after a write has started;
+check the exit status, not just whether stdout contains bytes.

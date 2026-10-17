@@ -146,6 +146,11 @@ if(MIKA_EXPERIMENTAL_PUNCTUATION)
     target_include_directories(mika_punctuation SYSTEM PRIVATE "${punctuation_stage}/include")
     target_link_libraries(mika_punctuation PUBLIC mika_punctuation_guard mika_model ${CMAKE_DL_LIBS})
     mika_warnings(mika_punctuation)
+    if(MSVC)
+        # The upstream C ABI can propagate C++ exceptions. Do not let /EHsc's
+        # extern-C-is-nothrow assumption optimize away our fallback boundary.
+        target_compile_options(mika_punctuation PRIVATE /EHsc-)
+    endif()
     target_compile_definitions(mika PRIVATE MIKA_EXPERIMENTAL_PUNCTUATION=1)
     target_link_libraries(mika PRIVATE mika_punctuation)
     add_custom_target(mika-punctuation-assets ALL
@@ -195,6 +200,9 @@ if(BUILD_TESTING)
         add_library(mika-punctuation-fake SHARED tests/punctuation_fake.cpp)
         target_link_libraries(mika-punctuation-fake PRIVATE Threads::Threads)
         mika_warnings(mika-punctuation-fake)
+        if(MSVC)
+            target_compile_options(mika-punctuation-fake PRIVATE /EHsc-)
+        endif()
     endif()
 
     add_executable(mika-unit tests/unit.c)

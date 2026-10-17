@@ -132,7 +132,7 @@ jobs:
           cmake -S . -B build-punctuation -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" \
-            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=OFF \
+            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON \
             -DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE="$PWD/build/_deps/transcribe-src" \
             -DFETCHCONTENT_SOURCE_DIR_MINIAUDIO="$PWD/build/_deps/miniaudio-src" \
             -DMIKA_TEST_MODEL="$PWD/build/test-model.gguf"
@@ -150,7 +150,7 @@ jobs:
             "-DCMAKE_TOOLCHAIN_FILE=$env:RUNNER_TEMP/mika-vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             "-DVCPKG_INSTALLED_DIR=$env:GITHUB_WORKSPACE/build/vcpkg_installed" `
-            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=OFF `
+            -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON `
             "-DFETCHCONTENT_SOURCE_DIR_TRANSCRIBE=$env:GITHUB_WORKSPACE/build/_deps/transcribe-src" `
             "-DFETCHCONTENT_SOURCE_DIR_MINIAUDIO=$env:GITHUB_WORKSPACE/build/_deps/miniaudio-src" `
             "-DMIKA_TEST_MODEL=$env:GITHUB_WORKSPACE/build/test-model.gguf"

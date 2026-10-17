@@ -18,14 +18,18 @@ option downloads pinned model, vocabulary, C API header, CPU runtime, and notice
 the installed program does not need Python. No text/audio is uploaded.
 
 ```sh
-cmake -S . -B build-punctuation -DMIKA_EXPERIMENTAL_PUNCTUATION=ON
+cmake -S . -B build-punctuation -DMIKA_EXPERIMENTAL_PUNCTUATION=ON -DMIKA_NATIVE_CPU=ON
 cmake --build build-punctuation --config Release --parallel 8
 ./build-punctuation/bin/mika --punctuate
 ```
 
 On Windows with Visual Studio, the command is typically
 `.\build-punctuation\bin\Release\mika.exe --punctuate`.
-Do not enable `MIKA_RELEASE_BUNDLE` in this prototype build.
+Do not enable `MIKA_RELEASE_BUNDLE` in this prototype build. Native CPU tuning
+makes this a local test binary, not a portable binary for other computers. The
+conservative scalar source-build path can be much slower than Mika's dispatched
+release build; CI tunes the non-distributed prototype to its runner CPU rather
+than weakening the five-minute test.
 
 - `mika` still produces raw output, including in an experimental build.
 - `mika --punctuate` explicitly opts into the formatting pass for that invocation.
@@ -65,7 +69,9 @@ still change how the same words are understood.
 
 Native SDK code remains mapped until process exit, avoiding unsafe unload-time
 registry/TLS teardown (and the resulting sanitizer-detected registry leaks).
-Sessions and returned strings are freed normally. Mika still exits after one run;
+The MSVC bridge disables the usual `extern "C"`-is-nothrow assumption so C++
+exceptions from the SDK can reach its fallback boundary. This is not SEH/crash
+recovery. Sessions and returned strings are freed normally. Mika still exits after one run;
 there is no persistent service or cache in the background.
 
 ## Quality assessment

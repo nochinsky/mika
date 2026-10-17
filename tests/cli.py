@@ -76,7 +76,9 @@ if os.name == "posix":
 class Arguments(unittest.TestCase):
     def run_cli(self, *args, **options):
         isolation = {"start_new_session": True} if os.name == "posix" else {
-            "creationflags": subprocess.CREATE_NO_WINDOW
+            # CREATE_NO_WINDOW can still supply a hidden console/CONIN$ handle.
+            # DETACHED_PROCESS is the actual no-controlling-console condition.
+            "creationflags": subprocess.DETACHED_PROCESS
         }
         return subprocess.run([MIKA, *args], capture_output=True, timeout=10, **isolation, **options)
 

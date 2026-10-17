@@ -95,7 +95,7 @@ class Arguments(unittest.TestCase):
         result = self.run_cli("--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn(b"Enter", result.stdout)
-        self.assertIn(b"60 seconds", result.stdout)
+        self.assertIn(b"5 minutes", result.stdout)
         self.assertIn(b"279 MB", result.stdout)
         self.assertEqual(result.stderr, b"")
 
@@ -153,6 +153,7 @@ class Controls(unittest.TestCase):
 
     def test_enter_prints_only_transcript(self):
         process = self.start()
+        self.assertIn(b"/ 05:00", process.messages)
         process.send(b"\r")
         self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
 
@@ -229,7 +230,8 @@ class Controls(unittest.TestCase):
         self.addCleanup(process.close)
         result = process.finish()
         self.assertEqual(result, (0, b"Test transcript.\n"))
-        self.assertIn(b"limit reached", process.messages)
+        self.assertIn(b"Listening 05:00 / 05:00", process.messages)
+        self.assertIn(b"5-minute limit reached", process.messages)
 
     def test_audio_and_model_failures_do_not_print_text(self):
         for flag in ("MIKA_FIXTURE_AUDIO_ERROR", "MIKA_FIXTURE_DEVICE_LOST", "MIKA_FIXTURE_MODEL_ERROR"):

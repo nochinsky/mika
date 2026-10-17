@@ -24,7 +24,7 @@ static inline void mika_atomic_set(MikaAtomic *value, unsigned number)
 #endif
 
 #define MIKA_SAMPLE_RATE 16000u
-#define MIKA_MAX_SECONDS 60u
+#define MIKA_MAX_SECONDS 300u
 #define MIKA_MAX_FRAMES (MIKA_SAMPLE_RATE * MIKA_MAX_SECONDS)
 
 typedef struct {

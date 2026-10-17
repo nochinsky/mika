@@ -51,7 +51,7 @@ Advanced environment variables, identical on both installers:
 
 | Variable | Purpose |
 | --- | --- |
-| `MIKA_VERSION` | Explicit release tag, e.g. `v0.1.1`, instead of latest. Can deliberately select an older version. |
+| `MIKA_VERSION` | Explicit release tag, e.g. `v0.1.2`, instead of latest. Can deliberately select an older version. |
 | `MIKA_REINSTALL=1` | Force a clean reinstall even when the release is current. |
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive with an adjacent `.sha256` file. |
 
@@ -91,9 +91,13 @@ replacement. Failed transfers are discarded. A forcibly killed download can leav
 may retain `.download.lock` for locking. `CURL_CA_BUNDLE` can name a trusted PEM
 bundle for a private/corporate CA without disabling verification.
 
-Audio remains in memory. The current 60-second bound limits recording memory and
-single-pass inference; reaching it automatically transcribes the recording. Longer
-recordings need a separate design for chunking and boundary accuracy, not just an
+Audio remains in memory. Recording automatically finishes and transcribes at
+**5 minutes**; Enter finishes sooner. The float32 recording buffer is bounded at
+19.2 MB, but model/inference memory is substantially larger and grows with audio
+length. Transcription starts after recording stops, so longer recordings take more
+time and memory to process. A five-minute repeated-public-speech input is covered
+by opt-in model tests; this is not a long-form accuracy benchmark. Sessions beyond
+five minutes still need a separate chunking/boundary design rather than an
 unbounded buffer.
 
 Exit codes: **0** success/help/version; **1** failure; **2** invalid arguments;

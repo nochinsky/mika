@@ -100,6 +100,12 @@ ctest --test-dir build --output-on-failure
 ./build/bin/mika-audio-devices  # metadata only; never records
 ```
 
+With Python and `MIKA_TEST_MODEL`, CTest runs both the short sample and
+`real-model-long`: a generated 300-second input repeating the public speech in
+25 slots. The long test checks that all slots and the final phrase are represented;
+it is not a five-minute dictation accuracy benchmark. It can use substantially
+more memory and time than the short test, especially on baseline CPUs.
+
 `MIKA_SANITIZERS=ON` instruments owned code with ASan/UBSan on GCC/Clang. Use a
 separate build directory and `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`.
 Third-party internals are not instrumented by this option.
@@ -116,7 +122,8 @@ pinned vcpkg baseline; Windows HTTPS uses native Schannel. Runtime-dispatched
 inference modules ship next to Mika with relative lookup paths.
 
 CI downloads the fixed model through Mika's real downloader, transcribes the public
-JFK sample, installs/relocates the package and checks installer failure paths.
+JFK sample plus its five-minute length regression, installs/relocates the package
+and checks installer failure paths.
 `scripts/package.py` ships only application binaries/libraries and documentation,
 including all required notices. Model weights, build directories and private audio
 are never release assets. See `.github/workflows/build.yml` for exact commands.

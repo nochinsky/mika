@@ -1,20 +1,21 @@
-## Quieter dictation, cleaner updates
+## Five-minute recordings
 
-- One updating status line: Starting → Listening → Transcribing. It disappears on
-  success, leaving only the transcript. Works without ANSI support in classic
-  Windows consoles; redirected logs omit routine status.
-- Rerun the same installer to update. Current installations skip the archive
-  download; model files are preserved. `MIKA_REINSTALL=1` forces a repair.
-- Installer locking prevents competing updates. Failed updates roll back; recovery
-  files are kept if automatic restoration fails.
-- A shorter README focused on installation and use, with advanced details moved
-  into linked documentation.
+- Record for up to **5 minutes**, instead of 60 seconds.
+- The timer now shows `00:00 / 05:00`. Press **Enter** sooner whenever you're done;
+  **Esc / Ctrl+C** still cancels. At five minutes, recording automatically finishes
+  and transcription starts.
+- Same quiet interface, fixed offline model, and clean transcript output.
+- Added full-capacity buffer tests and a real-model 300-second input regression
+  using repeated public speech. This verifies length handling and speech at the
+  end, not general long-form dictation accuracy.
 
-The **60-second automatic finish remains unchanged**. No microphone recording or
-model download happens during installation. On first use, Mika asks before fetching
-its fixed 279 MB English model; later runs work offline.
+Transcription still starts after recording stops. Longer recordings take more time
+and memory; the 19.2 MB recording buffer is only part of total inference memory.
+No model re-download is needed when updating from the previous release.
 
 ### Install or update
+
+Close Mika, then rerun your installation command.
 
 **Linux / Arch / WSL — x86-64, glibc 2.35+:**
 
@@ -28,8 +29,6 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | ba
 irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
 ```
 
-Close Mika before updating. Use `mika --version` to check the installed release.
-
-Native Linux/Windows CI validates builds, model download/inference, installation,
-updates and failure paths. Terminal tests use fake audio, never a private microphone.
-See the [README](https://github.com/nochinsky/mika#readme) for usage.
+Check with `mika --version`. Application updates preserve the cached model and do
+not open the microphone. See the [README](https://github.com/nochinsky/mika#readme)
+for usage and advanced installation details.

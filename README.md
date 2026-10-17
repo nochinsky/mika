@@ -31,7 +31,7 @@ mika
 
 Speak after **Listening**, then press **Enter** to finish. **Esc / Ctrl+C** cancels.
 Mika uses your system's default microphone. Recordings automatically finish at
-**60 seconds** for now.
+**5 minutes**. Press Enter sooner whenever you're done.
 
 The first run asks before downloading the **279 MB** speech model. After that,
 recognition works offline. Your audio stays in memory and is never uploaded or saved.

@@ -41,6 +41,20 @@ static int pcm_tests(void)
     mika_pcm_free(&pcm);
     CHECK(mika_pcm_init(&pcm, 0) == 1);
     CHECK(mika_pcm_init(&pcm, MIKA_MAX_FRAMES + 1) == 1);
+    /* Exercise the real five-minute capacity without waiting five minutes. */
+    CHECK(MIKA_MAX_SECONDS == 300u && MIKA_MAX_FRAMES == 4800000u);
+    CHECK(mika_pcm_init(&pcm, MIKA_MAX_FRAMES) == 0);
+    float block[1024];
+    for (unsigned i = 0; i < 1024; ++i) { block[i] = 0.25f; }
+    while (mika_atomic_get(&pcm.frames) < MIKA_MAX_FRAMES) {
+        mika_pcm_append(&pcm, block, 1024);
+    }
+    CHECK(mika_atomic_get(&pcm.frames) == MIKA_MAX_FRAMES);
+    CHECK(pcm.samples[0] == 0.25f && pcm.samples[MIKA_MAX_FRAMES - 1] == 0.25f);
+    mika_pcm_append(&pcm, block, 1024);
+    CHECK(mika_atomic_get(&pcm.frames) == MIKA_MAX_FRAMES);
+    CHECK(!mika_atomic_get(&pcm.failed));
+    mika_pcm_free(&pcm);
     return 0;
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(mika VERSION 0.1.1 LANGUAGES C CXX)
+project(mika VERSION 0.1.2 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -178,5 +178,11 @@ if(BUILD_TESTING)
             "${transcribe_SOURCE_DIR}/samples/jfk.wav")
         set_tests_properties(real-model PROPERTIES TIMEOUT 120
             PASS_REGULAR_EXPRESSION "ask not what your country can do for you")
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME real-model-long COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/long_audio.py"
+                "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
+                "${transcribe_SOURCE_DIR}/samples/jfk.wav")
+            set_tests_properties(real-model-long PROPERTIES TIMEOUT 600)
+        endif()
     endif()
 endif()

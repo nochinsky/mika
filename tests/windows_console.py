@@ -52,6 +52,7 @@ try:
                         raise AssertionError(f'No listening status: {screen()!r}')
                     time.sleep(0.02)
                 assert 'Enter: finish | Esc: cancel' in screen(), screen()
+                assert '/ 05:00' in screen(), screen()
                 event = Record(1, Event(key=Key(True, 1, ord(key), 0, key, 0)))
                 count = W.DWORD()
                 if not kernel.WriteConsoleInputW(input_handle, C.byref(event), 1, C.byref(count)):

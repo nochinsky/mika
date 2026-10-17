@@ -18,9 +18,10 @@ static void help(void)
           "Usage: mika [--help | --version]\n\n"
           "Run mika, speak after 'Listening', then press Enter to transcribe.\n"
           "Esc or Ctrl+C cancels without printing a transcript.\n"
-          "The default system microphone is used; select it in your OS sound settings.\n"
-          "Recordings are kept in memory, capped at 60 seconds, and never saved.\n"
-          "At the limit Mika stops recording and transcribes automatically.\n\n"
+          "The default system microphone is used; select it in your OS sound settings.\n", stdout);
+    printf("Recordings are kept in memory, capped at %u minutes, and never saved.\n",
+           MIKA_MAX_SECONDS / 60u);
+    fputs("At the limit Mika stops recording and transcribes automatically.\n\n"
           "The first run asks permission to download the fixed 279 MB English model.\n"
           "Later runs work offline. No account, setup command, or clipboard access.\n"
           "Only the transcript goes to stdout; status messages go to stderr.\n"
@@ -104,8 +105,8 @@ int main(int argc, char **argv)
         unsigned seconds = (unsigned)(frames / MIKA_SAMPLE_RATE);
         if (seconds != previous_second) {
             char status[96];
-            snprintf(status, sizeof(status), "Listening %02u:%02u / 01:00   Enter: finish | Esc: cancel",
-                     seconds / 60, seconds % 60);
+            snprintf(status, sizeof(status), "Listening %02u:%02u / %02u:%02u   Enter: finish | Esc: cancel",
+                     seconds / 60, seconds % 60, MIKA_MAX_SECONDS / 60u, MIKA_MAX_SECONDS % 60u);
             mika_status_show(status);
             previous_second = seconds;
         }
@@ -140,7 +141,13 @@ int main(int argc, char **argv)
         result = 1;
         goto done;
     }
-    mika_status_show(limit_reached ? "Transcribing (60-second limit reached)..." : "Transcribing...");
+    if (limit_reached) {
+        char status[80];
+        snprintf(status, sizeof(status), "Transcribing (%u-minute limit reached)...", MIKA_MAX_SECONDS / 60u);
+        mika_status_show(status);
+    } else {
+        mika_status_show("Transcribing...");
+    }
     result = mika_engine_run(engine, mika_audio_samples(audio), mika_audio_frames(audio), &text);
     if (cancel_requested(&cancel)) { result = 130; }
 done:

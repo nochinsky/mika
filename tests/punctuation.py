@@ -356,4 +356,7 @@ class WindowsConsole(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    if sys.platform == 'darwin':
+        import faulthandler
+        faulthandler.dump_traceback_later(60, repeat=True)
+    unittest.main(verbosity=2, failfast=True)

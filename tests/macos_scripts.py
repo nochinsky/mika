@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import signal
 import shutil
 import subprocess
 import sys
@@ -226,7 +227,10 @@ class MacScripts(unittest.TestCase):
         master, slave = pty.openpty()
         def session():
             os.setsid()
+            signal.signal(signal.SIGTTOU, signal.SIG_IGN)
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+            os.tcsetpgrp(slave, os.getpgrp())
+            signal.signal(signal.SIGTTOU, signal.SIG_DFL)
         process = subprocess.Popen(['/bin/bash'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=slave,
                                    env={**self.env, 'MIKA_UNINSTALL_YES': '0'}, preexec_fn=session)
         try:
@@ -254,4 +258,7 @@ class MacScripts(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    if sys.platform == 'darwin':
+        import faulthandler
+        faulthandler.dump_traceback_later(60, repeat=True)
+    unittest.main(verbosity=2, failfast=True)

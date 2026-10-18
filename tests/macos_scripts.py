@@ -233,6 +233,7 @@ class MacScripts(unittest.TestCase):
             signal.signal(signal.SIGTTOU, signal.SIG_DFL)
         process = subprocess.Popen(['/bin/bash'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=slave,
                                    env={**self.env, 'MIKA_UNINSTALL_YES': '0'}, preexec_fn=session)
+        os.close(slave)  # The parent must not retain a BSD session's slave.
         try:
             process.stdin.write((ROOT / 'uninstall-macos.sh').read_bytes())
             process.stdin.close()
@@ -249,12 +250,11 @@ class MacScripts(unittest.TestCase):
             self.assertEqual(process.returncode, 130)
             self.assertTrue(self.app.exists())
         finally:
+            os.close(master)  # Unblock BSD terminal revoke before waitpid.
             if process.poll() is None:
                 process.kill()
-                process.wait()
+                process.wait(timeout=5)
             process.stdout.close()
-            os.close(master)
-            os.close(slave)
 
 
 if __name__ == '__main__':

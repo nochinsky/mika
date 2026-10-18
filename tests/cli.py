@@ -43,6 +43,11 @@ if os.name == "posix":
                 [binary, *args], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
                 env={**os.environ, **(env or {})}, preexec_fn=session,
             )
+            # Only the child owns the slave. Keeping an extra BSD slave open can
+            # block session revocation/process exit. The master accepts termios
+            # queries too, including the live-parent-shell restoration check.
+            os.close(self.slave)
+            self.slave = None
 
         def wait_for(self, marker, timeout=10):
             deadline = time.monotonic() + timeout
@@ -64,7 +69,12 @@ if os.name == "posix":
                 output, diagnostics = self.process.communicate(timeout=10)
                 self.diagnostics = diagnostics or b''
                 while select.select([self.master], [], [], 0)[0]:
-                    chunk = os.read(self.master, 4096)
+                    try:
+                        chunk = os.read(self.master, 4096)
+                    except OSError as error:
+                        if error.errno == errno.EIO:  # Linux master EOF.
+                            break
+                        raise
                     if not chunk:  # Darwin keeps a revoked PTY readable at EOF.
                         break
                     self.messages += chunk
@@ -75,7 +85,7 @@ if os.name == "posix":
 
         def assert_restored(self):
             try:
-                after = termios.tcgetattr(self.slave)
+                after = termios.tcgetattr(self.master)
             except termios.error as error:
                 # Darwin revokes the PTY when its session leader exits. Its
                 # post-exit mode is unobservable; a live-shell test below checks
@@ -87,18 +97,20 @@ if os.name == "posix":
                 raise AssertionError('terminal modes were not restored')
 
         def close(self):
-            if self.process.poll() is None:
-                self.process.kill()
-                self.process.wait()
-            if self.process.stdout:
-                self.process.stdout.close()
-            if self.process.stderr:
-                self.process.stderr.close()
+            # Close the PTY before waiting for a killed BSD session leader; its
+            # exit/revoke can otherwise wait on our still-open terminal handles.
             for name in ("master", "slave"):
                 fd = getattr(self, name, None)
                 if fd is not None:
                     os.close(fd)
                     setattr(self, name, None)
+            if self.process.poll() is None:
+                self.process.kill()
+                self.process.wait(timeout=5)
+            if self.process.stdout:
+                self.process.stdout.close()
+            if self.process.stderr:
+                self.process.stderr.close()
 
 
 class Arguments(unittest.TestCase):
@@ -168,7 +180,7 @@ class Controls(unittest.TestCase):
         process = TerminalProcess(env=env)
         self.addCleanup(process.close)
         process.wait_for(b"Listening 00:")
-        modes = termios.tcgetattr(process.slave)
+        modes = termios.tcgetattr(process.master)
         self.assertFalse(modes[3] & termios.ECHO)
         self.assertFalse(modes[3] & termios.ICANON)
         return process
@@ -185,7 +197,7 @@ class Controls(unittest.TestCase):
             process.wait_for(b'Listening 00:')
             process.send(key)
             process.wait_for(f'CHILD_STATUS:{expected[0]}'.encode())
-            self.assertEqual(termios.tcgetattr(process.slave), process.before)
+            self.assertEqual(termios.tcgetattr(process.master), process.before)
             process.send(b'ack\n')
             self.assertEqual(process.finish(), expected)
 

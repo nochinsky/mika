@@ -246,7 +246,18 @@ class MacScripts(unittest.TestCase):
                 if select.select([master], [], [], .1)[0]:
                     messages.extend(os.read(master, 4096))
             os.write(master, b'n\n')
-            process.communicate(timeout=10)
+            # Darwin waits for terminal output to drain on session exit. The
+            # test must behave like a terminal emulator, not waitpid first.
+            deadline = time.monotonic() + 10
+            while process.poll() is None:
+                if time.monotonic() > deadline:
+                    self.fail(repr(messages))
+                if select.select([master], [], [], .1)[0]:
+                    try:
+                        messages.extend(os.read(master, 4096))
+                    except OSError:
+                        break  # Linux PTY EOF; wait below still has a timeout.
+            process.communicate(timeout=5)
             self.assertEqual(process.returncode, 130)
             self.assertTrue(self.app.exists())
         finally:

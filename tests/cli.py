@@ -66,20 +66,38 @@ if os.name == "posix":
 
         def finish(self):
             try:
-                output, diagnostics = self.process.communicate(timeout=10)
-                self.diagnostics = diagnostics or b''
-                while select.select([self.master], [], [], 0)[0]:
-                    try:
-                        chunk = os.read(self.master, 4096)
-                    except OSError as error:
-                        if error.errno == errno.EIO:  # Linux master EOF.
-                            break
-                        raise
-                    if not chunk:  # Darwin keeps a revoked PTY readable at EOF.
-                        break
-                    self.messages += chunk
+                # BSD can wait for PTY output drain during session exit. Read
+                # terminal/status and redirected streams concurrently, never wait
+                # for exit first (nor spin on the master's EOF).
+                streams = {self.master: 'terminal'}
+                for name in ('stdout', 'stderr'):
+                    stream = getattr(self.process, name)
+                    if stream is not None and not stream.closed:
+                        streams[stream.fileno()] = name
+                captured = {'stdout': b'', 'stderr': b''}
+                deadline = time.monotonic() + 10
+                while streams:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise AssertionError(f'PTY process did not finish: {self.messages!r}')
+                    ready, _, _ = select.select(list(streams), [], [], min(remaining, .1))
+                    for fd in ready:
+                        try:
+                            chunk = os.read(fd, 65536)
+                        except OSError as error:
+                            if fd != self.master or error.errno != errno.EIO:
+                                raise
+                            chunk = b''  # Linux master EOF.
+                        if not chunk:
+                            del streams[fd]
+                        elif streams[fd] == 'terminal':
+                            self.messages += chunk
+                        else:
+                            captured[streams[fd]] += chunk
+                self.process.wait(timeout=max(.01, deadline - time.monotonic()))
+                self.diagnostics = captured['stderr']
                 self.assert_restored()
-                return self.process.returncode, output
+                return self.process.returncode, captured['stdout']
             finally:
                 self.close()
 
@@ -320,9 +338,8 @@ class Controls(unittest.TestCase):
         process = self.start()
         process.process.stdout.close()
         process.send(b"\r")
-        status = process.process.wait(timeout=10)
+        status, _ = process.finish()
         self.assertIn(status, (-signal.SIGPIPE, 1))
-        process.assert_restored()
 
 
 if __name__ == "__main__":

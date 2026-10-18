@@ -27,10 +27,11 @@ class Package(unittest.TestCase):
         (binary / 'mika-inference-test').write_bytes(b'must not ship')
         names = {'model.int8.onnx', 'sp.model'} | (
             {'mika-fullstop.dll', 'onnxruntime.dll', 'onnxruntime_providers_shared.dll'} if windows
+            else {'libmika-fullstop.dylib', 'libonnxruntime.dylib'} if platform == 'macos'
             else {'libmika-fullstop.so', 'libonnxruntime.so'})
         for name in names - {missing}:
             (payload / name).write_bytes(b'test asset')
-        if not windows:
+        if platform == 'linux':
             (stage / 'lib').mkdir()
             (stage / 'lib/libggml-cpu-test.so').write_bytes(b'test library')
         if extra:
@@ -38,14 +39,15 @@ class Package(unittest.TestCase):
         result = subprocess.run([sys.executable, ROOT / 'scripts/package.py', '--stage', stage,
                                  '--output', root / 'dist', '--platform', platform, '--version', 'vtest'],
                                 capture_output=True, timeout=30)
-        archive = root / 'dist' / ('mika-windows-x86_64.zip' if windows else 'mika-linux-x86_64.tar.gz')
+        archive = root / 'dist' / ('mika-windows-x86_64.zip' if windows else
+                                   'mika-macos-arm64.tar.gz' if platform == 'macos' else 'mika-linux-x86_64.tar.gz')
         return result, archive
 
     def test_payload_and_notices_but_no_validation_probe(self):
-        for platform in ('linux', 'windows'):
+        for platform in ('linux', 'windows', 'macos'):
             result, archive = self.build(platform)
             self.assertEqual(result.returncode, 0, result.stderr)
-            if platform == 'linux':
+            if platform != 'windows':
                 with tarfile.open(archive) as bundle:
                     names = bundle.getnames()
             else:
@@ -58,7 +60,7 @@ class Package(unittest.TestCase):
                              hashlib.sha256(archive.read_bytes()).hexdigest())
 
     def test_incomplete_payload_is_rejected(self):
-        for platform in ('linux', 'windows'):
+        for platform in ('linux', 'windows', 'macos'):
             result, archive = self.build(platform, missing='sp.model')
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(archive.exists())

@@ -136,6 +136,11 @@ Earlier [native prototype run 39036249265](https://github.com/nochinsky/mika/act
 reproduced the conversion hash and identical 90-example outputs on both platforms;
 that historical run alone is not production-packaging approval.
 
+Experimental Apple Silicon builds use the same weights and native CPU-only
+formatter through pinned ARM64 `libonnxruntime.dylib`; see [macOS status](macos.md).
+The upstream runtime may include unused Core ML provider code, but Mika selects
+only the default CPU provider. No GPU/Core ML execution provider is appended.
+
 ## Provenance and licenses
 
 Exact URLs/hashes: [fetcher](../scripts/fetch_punctuation.py). FullStop English

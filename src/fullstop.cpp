@@ -52,6 +52,9 @@ extern "C" MikaFullstop *MikaFullstopOpen(const char *model, const char *vocab)
             file.peek() != std::char_traits<char>::eof() ||
             !context->tokenizer.LoadFromSerializedProto(serialized).ok() ||
             context->tokenizer.GetPieceSize() != 32000) { return nullptr; }
+        /* An empty execution-provider list uses ORT's built-in CPU provider.
+         * Never append Core ML, Metal, CUDA or another accelerator, even if the
+         * upstream runtime was compiled with optional provider support. */
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1);
         options.SetInterOpNumThreads(1);

@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.24)
 project(mika VERSION 0.2.0 LANGUAGES C CXX)
 configure_file(src/mika_version.h.in generated/mika_version.h @ONLY)
+if(APPLE)
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" OR
+       (CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"))
+        message(FATAL_ERROR "Experimental macOS support is native Apple Silicon arm64 only")
+    endif()
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version" FORCE)
+    endif()
+    configure_file(src/macos-info.plist.in generated/macos-info.plist @ONLY)
+endif()
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -33,13 +43,23 @@ endif()
 set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(TRANSCRIBE_BUILD_SHARED ${MIKA_RELEASE_BUNDLE} CACHE BOOL "" FORCE)
-set(TRANSCRIBE_GGML_BACKEND_DL ${MIKA_RELEASE_BUNDLE} CACHE BOOL "" FORCE)
-set(TRANSCRIBE_INSTALL ${MIKA_RELEASE_BUNDLE} CACHE BOOL "" FORCE)
+# Apple Silicon uses one static CPU backend even in release bundles. Keep the
+# existing feature-dispatched shared backend layout on Linux/Windows.
+set(mika_dispatch ${MIKA_RELEASE_BUNDLE})
+if(APPLE)
+    set(mika_dispatch OFF)
+endif()
+set(TRANSCRIBE_BUILD_SHARED ${mika_dispatch} CACHE BOOL "" FORCE)
+set(TRANSCRIBE_GGML_BACKEND_DL ${mika_dispatch} CACHE BOOL "" FORCE)
+set(TRANSCRIBE_INSTALL ${mika_dispatch} CACHE BOOL "" FORCE)
 set(TRANSCRIBE_METAL OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_VULKAN OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_CUDA OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_HIP OFF CACHE BOOL "" FORCE)
+set(GGML_SYCL OFF CACHE BOOL "" FORCE)
+set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+set(GGML_WEBGPU OFF CACHE BOOL "" FORCE)
+set(GGML_RPC OFF CACHE BOOL "" FORCE)
 set(TRANSCRIBE_USE_SYSTEM_BLAS OFF CACHE BOOL "" FORCE)
 # Baseline CPU build by default; local native tuning is an explicit opt-in.
 option(MIKA_NATIVE_CPU "Optimize for this build machine; binary may not be portable" OFF)
@@ -49,7 +69,7 @@ else()
     set(GGML_NATIVE ${MIKA_NATIVE_CPU} CACHE BOOL "" FORCE)
 endif()
 set(TRANSCRIBE_X86_CONSERVATIVE ON CACHE BOOL "" FORCE)
-set(GGML_CPU_ALL_VARIANTS ${MIKA_RELEASE_BUNDLE} CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ${mika_dispatch} CACHE BOOL "" FORCE)
 FetchContent_Declare(transcribe
     URL https://codeload.github.com/handy-computer/transcribe.cpp/tar.gz/b61b7f936e4e728f8999a8c3e98c7112e700410e
     URL_HASH SHA256=9e8f32228cf633b20f21cb321371f887fb96537d6a76f062d516f488818402db
@@ -72,6 +92,10 @@ target_compile_definitions(mika_miniaudio PUBLIC
 target_link_libraries(mika_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 if(UNIX)
     target_link_libraries(mika_miniaudio PUBLIC m)
+endif()
+if(APPLE)
+    target_link_libraries(mika_miniaudio PUBLIC
+        "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
 endif()
 
 option(MIKA_SANITIZERS "Instrument Mika-owned code with AddressSanitizer and UBSan" OFF)
@@ -125,6 +149,10 @@ mika_warnings(mika_fullstop_render)
 add_executable(mika src/main.c)
 target_link_libraries(mika PRIVATE mika_engine mika_model mika_audio)
 mika_warnings(mika)
+if(APPLE)
+    target_link_options(mika PRIVATE
+        "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_BINARY_DIR}/generated/macos-info.plist")
+endif()
 
 include(cmake/Formatting.cmake)
 
@@ -219,6 +247,11 @@ if(BUILD_TESTING)
             add_test(NAME windows-console COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/windows_console.py"
                 "$<TARGET_FILE:mika-cli-fixture>" --raw)
             set_tests_properties(windows-console PROPERTIES TIMEOUT 60)
+        endif()
+        if(APPLE)
+            add_test(NAME macos-scripts COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_scripts.py")
+            set_tests_properties(macos-scripts PROPERTIES TIMEOUT 120)
         endif()
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_test(NAME installers COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/installers.py"

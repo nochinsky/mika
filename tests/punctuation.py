@@ -20,7 +20,9 @@ sys.argv = [__file__]
 SHORT = 'hello how are you i am fine thank you i am going home are you coming with me'
 # Deterministic native-model smoke output, not a quality-approved reference.
 EXPECTED = 'Hello, how are you? I am fine, Thank you, I am going home. are you coming with me?'
-RUNTIME = ['onnxruntime.dll', 'mika-fullstop.dll'] if os.name == 'nt' else ['libonnxruntime.so', 'libmika-fullstop.so']
+RUNTIME = (['onnxruntime.dll', 'mika-fullstop.dll'] if os.name == 'nt' else
+           ['libonnxruntime.dylib', 'libmika-fullstop.dylib'] if sys.platform == 'darwin' else
+           ['libonnxruntime.so', 'libmika-fullstop.so'])
 
 
 def words(text):

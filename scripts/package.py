@@ -10,7 +10,7 @@ import zipfile
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--platform', choices=['linux', 'windows'], required=True)
+parser.add_argument('--platform', choices=['linux', 'windows', 'macos'], required=True)
 parser.add_argument('--version', required=True)
 parser.add_argument('--dependencies', type=Path)
 args = parser.parse_args()
@@ -37,7 +37,9 @@ with tempfile.TemporaryDirectory() as temporary:
     punctuation = args.stage / 'bin' / 'punctuation'
     required = {'model.int8.onnx', 'sp.model'} | (
         {'mika-fullstop.dll', 'onnxruntime.dll', 'onnxruntime_providers_shared.dll'}
-        if args.platform == 'windows' else {'libmika-fullstop.so', 'libonnxruntime.so'})
+        if args.platform == 'windows' else
+        {'libmika-fullstop.dylib', 'libonnxruntime.dylib'} if args.platform == 'macos' else
+        {'libmika-fullstop.so', 'libonnxruntime.so'})
     if not punctuation.is_dir() or not (punctuation / 'licenses').is_dir():
         raise SystemExit('Missing installed formatting payload/notices')
     actual = {item.name for item in punctuation.iterdir() if item.is_file()}
@@ -62,8 +64,8 @@ with tempfile.TemporaryDirectory() as temporary:
                     target.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(notice, target / name)
     (root / 'VERSION').write_text(args.version + '\n')
-    if args.platform == 'linux':
-        archive = args.output / 'mika-linux-x86_64.tar.gz'
+    if args.platform != 'windows':
+        archive = args.output / ('mika-macos-arm64.tar.gz' if args.platform == 'macos' else 'mika-linux-x86_64.tar.gz')
         with tarfile.open(archive, 'w:gz') as bundle:
             bundle.add(root, arcname='mika')
     else:

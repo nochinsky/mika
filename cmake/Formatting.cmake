@@ -1,12 +1,16 @@
 # One fixed formatter, not a backend registry. Preparation and payload layout
 # are deliberately unchanged; --raw bypasses loading it at runtime.
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" OR
-   NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-    message(FATAL_ERROR "Mika supports native Linux/Windows x86-64")
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR
+   NOT ((APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$") OR
+        ((WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux") AND
+         CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")))
+    message(FATAL_ERROR "Mika supports Linux/Windows x86-64 and experimental macOS arm64")
 endif()
 find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter)
 if(WIN32)
     set(punctuation_platform windows)
+elseif(APPLE)
+    set(punctuation_platform macos)
 else()
     set(punctuation_platform linux)
 endif()
@@ -32,6 +36,8 @@ if(WIN32)
     set_target_properties(mika_ort PROPERTIES
         IMPORTED_LOCATION "${punctuation_stage}/payload/onnxruntime.dll"
         IMPORTED_IMPLIB "${punctuation_stage}/include/onnxruntime.lib")
+elseif(APPLE)
+    set_target_properties(mika_ort PROPERTIES IMPORTED_LOCATION "${punctuation_stage}/payload/libonnxruntime.dylib")
 else()
     set_target_properties(mika_ort PROPERTIES IMPORTED_LOCATION "${punctuation_stage}/payload/libonnxruntime.so")
 endif()
@@ -41,7 +47,10 @@ target_include_directories(mika-fullstop SYSTEM PRIVATE
     "${punctuation_stage}/include" "${sentencepiece_SOURCE_DIR}/src")
 target_link_libraries(mika-fullstop PRIVATE mika_fullstop_render sentencepiece-static mika_ort)
 set_target_properties(mika-fullstop PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
-if(UNIX)
+if(APPLE)
+    set_target_properties(mika-fullstop PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "@loader_path")
+elseif(UNIX)
     set_target_properties(mika-fullstop PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "$ORIGIN")
     target_link_options(mika-fullstop PRIVATE "LINKER:--exclude-libs,ALL")
 endif()

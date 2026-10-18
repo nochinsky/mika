@@ -5,7 +5,8 @@ configurable speech platform. Keep changes small and preserve stdout/exit behavi
 
 ## Build requirements
 
-- x86-64 Linux or Windows; CMake **3.24+**, C17/C++17 compiler and threads.
+- x86-64 Linux or Windows; experimental macOS 14+ ARM64. CMake **3.24+**,
+  C17/C++17 compiler and threads. See [macOS build/status](docs/macos.md).
 - libcurl **7.85+**, OpenSSL Crypto **1.1.1+** (or the pinned vcpkg manifest).
 - **Python 3.12+ and the pinned conversion requirements for development/builds**.
   Python is never an installed-app dependency.
@@ -62,8 +63,10 @@ cmake --build build --config Release --parallel 8
 ```
 
 There is one app configuration: formatting by default, `--raw` at runtime. There
-is no experimental build switch, alternate model selector, or supported macOS/ARM
-build. Keep the `punctuation/` directory beside the executable.
+is no experimental formatting switch or alternate model selector. Experimental
+macOS support is ARM64-only, with one static CPU speech backend and no GPU/Core ML
+execution; see [the native CI and hardware-testing limitations](docs/macos.md).
+Keep the `punctuation/` directory beside the executable.
 
 ## Tests and measurements
 

@@ -17,7 +17,9 @@ Mika turns spoken English into a usable prompt for AI agents with minimal fricti
 6. Enter finishes; Esc/Ctrl+C cancels without a transcript. Five minutes ends
    recording automatically. No-speech/failure must not submit an empty agent prompt.
 7. Straightforward per-user installation and explicit safe updates on x86-64
-   Linux/WSL (glibc 2.35+) and Windows 10/11. No root/admin or end-user Python.
+   Linux/WSL (glibc 2.35+) and Windows 10/11. Experimental macOS 14+ Apple Silicon
+   support uses the same CPU-only pipeline; native CI does not establish microphone
+   permissions/capture. No root/admin or end-user Python.
 
 ## Deliberate non-goals
 

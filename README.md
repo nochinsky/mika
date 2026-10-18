@@ -52,6 +52,26 @@ mika > notes.txt
 Close Mika and rerun the same installation command. It installs the latest release,
 or skips reinstallation if you're already current. Your downloaded model is kept.
 
+## Uninstall
+
+Close Mika, then run as your normal user. Confirm to remove the app, downloaded
+speech model, and installer-created command/PATH setup. Notes saved outside the
+app directory are kept.
+
+**Linux / Arch / WSL**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | bash
+```
+
+**Windows — PowerShell**
+
+```powershell
+irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
+```
+
+[Removal details & keeping the model](docs/usage.md#uninstalling).
+
 [Help & advanced installation](docs/usage.md) · [Build & contribute](CONTRIBUTING.md) ·
 [Releases](https://github.com/nochinsky/mika/releases)
 

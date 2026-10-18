@@ -12,6 +12,26 @@ permissions:
   contents: read
 
 jobs:
+  uninstallers:
+    name: Uninstallers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Linux install/uninstall and piped-confirmation fixtures
+        if: runner.os == 'Linux'
+        run: python3 tests/uninstallers.py
+      - name: Native Windows PowerShell 5.1 removal fixtures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/uninstall_windows.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
   package:
     name: ${{ matrix.platform }} x86-64
     strategy:
@@ -165,7 +185,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: [uninstallers, package]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

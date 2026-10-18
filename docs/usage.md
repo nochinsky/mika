@@ -78,10 +78,62 @@ Linux creates `~/.local/bin/mika` and a marked PATH block in your shell profile
 (or a Fish `conf.d/mika.fish` file). Relative/empty `XDG_DATA_HOME` falls back to
 `~/.local/share`. Windows adds the app's `bin` directory to your user PATH.
 
-To uninstall, remove `app` and the Linux command symlink or Windows user-PATH entry.
-Remove `models` only if you also want to reclaim its download. Linux's marked Mika
-PATH block may be removed, but `~/.local/bin` is commonly useful for other apps.
-A small empty `.installer.lock` file may remain; it does not mean anything is running.
+## Uninstalling
+
+Close Mika and run the matching command as your normal user, without sudo/admin:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
+```
+
+Both show what will be removed and ask once before making changes. Default/Enter
+cancels. Linux reads confirmation from the controlling terminal, not the piped
+script. Noninteractive use requires explicit unattended consent.
+
+Removal includes the **installer-managed application** (bundled formatter, runtime,
+docs/licenses), the fixed downloaded speech model and its `.part.*` files, and the
+Mika command/PATH setup. Linux removes only a symlink pointing to this installation,
+unchanged Mika blocks in supported shell profiles, and an unchanged Mika Fish file.
+Windows removes only the matching application `bin` entry from user/current-process
+PATH; it does not modify machine-wide PATH. Restart other terminals afterward.
+
+Uninstallers never delete shared directories such as `~/.local/bin`, unrelated
+commands/cache files, source/manual installations, or transcripts saved outside
+the managed app directory. The entire managed app directory is removed, so move
+any personal files out of it first. App
+ownership is checked using the release `VERSION` and installer `ARCHIVE_SHA256`
+markers; linked app/cache roots or invalid markers are refused. Linux leaves
+symlinked shell profiles and customized Mika profile/Fish content unchanged for
+manual review. Unknown files and installer recovery directories are preserved;
+coordination locks may remain alongside retained data. Repeating removal is safe.
+Use the same XDG/Zsh configuration environment that was used to install Mika to
+find custom locations; uninstallers do not search arbitrary directories.
+
+To remove the app but **keep downloaded speech weights**:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | MIKA_KEEP_MODEL=1 bash
+```
+
+```powershell
+$env:MIKA_KEEP_MODEL = '1'
+irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
+Remove-Item Env:MIKA_KEEP_MODEL
+```
+
+`MIKA_UNINSTALL_YES=1` explicitly skips confirmation for deliberate unattended use;
+`MIKA_KEEP_MODEL` and `MIKA_UNINSTALL_YES` accept only `0` or `1`. Downloaded local
+scripts also support `bash uninstall.sh --keep-model --yes` and
+`powershell.exe -File uninstall.ps1 -KeepModel -Yes`. No execution-policy change is
+needed for the piped PowerShell command. If a process/permission error interrupts
+removal, close Mika, correct the reported problem, and rerun; filesystem/PATH
+changes are not a single atomic transaction. If the ownership markers themselves
+are missing/damaged, inspect the reported app directory and clean it up manually
+rather than bypassing ownership checks.
 
 ## Model and privacy
 

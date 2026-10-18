@@ -224,6 +224,9 @@ if(BUILD_TESTING)
             add_test(NAME installers COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/installers.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/install.sh")
             set_tests_properties(installers PROPERTIES TIMEOUT 60)
+            add_test(NAME uninstallers COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/uninstallers.py")
+            set_tests_properties(uninstallers PROPERTIES TIMEOUT 90)
         endif()
     endif()
 

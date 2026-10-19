@@ -82,6 +82,22 @@ cache eviction; `--model` is **not** a CLI model-location override.
 
 ## Guided natural-prompt corpus (separate explicit save consent)
 
+For the easiest local Linux session after building the probe and installing the
+speech model, run:
+
+```sh
+python3 scripts/guided_validation.py --consent-save-audio
+```
+
+It checks prerequisites/default input, asks before recording, creates a private
+Git-ignored session, offers playback/retakes for capture problems, then scores raw
+and formatted recognition locally. It does not upload audio or retain hypotheses
+in the report. `--probe PATH --model PATH` selects an explicit developer build and
+verified speech file; `--cases negation numbers hesitation` makes a short pilot.
+Keep a frozen probe/assets copy when comparing changes during a live session.
+Record once, then rerun evaluation against that same corpus rather than rerecording
+until recognition improves. The installed Mika command still never saves audio.
+
 [`tests/spoken_prompt_cases.json`](../tests/spoken_prompt_cases.json) contains 12
 predeclared prompts/references/checks: negations, constraints, numeric contrasts,
 versions, technical literals, conditional actions and spoken corrections. It is
@@ -98,7 +114,8 @@ never put recordings/transcripts in git or upload them as CI artifacts.
 ```sh
 python3 scripts/record_spoken.py --consent-save-audio \
   --output-dir build-private-dictation/session-01
-# Optional: --cases negation numbers path; --seconds 20 (maximum per prompt)
+# Optional: --review for playback/retakes, --cases negation numbers path;
+# --seconds 20 is the maximum per prompt
 ```
 
 Read each prompt naturally after starting it; Enter ends the clip, with an

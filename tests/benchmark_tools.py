@@ -66,6 +66,13 @@ class BenchmarkTools(unittest.TestCase):
             self.assertIn(b'--consent-save-audio is required', result.stderr)
             self.assertFalse(output.exists())
 
+    def test_guided_session_requires_explicit_save_consent(self):
+        result = subprocess.run([sys.executable, ROOT / 'scripts/guided_validation.py'],
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b'--consent-save-audio', result.stderr)
+        self.assertIn(b'microphone has not been opened', result.stderr)
+
     @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux PTY recording fixture')
     def test_guided_recording_with_fake_capture_is_private(self):
         import pty
@@ -81,7 +88,7 @@ class BenchmarkTools(unittest.TestCase):
             corpus = root / 'private'
             master, slave = pty.openpty()
             process = subprocess.Popen([sys.executable, ROOT / 'scripts/record_spoken.py',
-                                        '--consent-save-audio', '--output-dir', corpus, '--cases', 'negation'],
+                                        '--consent-save-audio', '--review', '--output-dir', corpus, '--cases', 'negation'],
                                        stdin=slave, stdout=slave, stderr=slave,
                                        env={**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH']})
             messages = bytearray()
@@ -96,6 +103,15 @@ class BenchmarkTools(unittest.TestCase):
                 wait_for(b'Press Enter when ready')
                 os.write(master, b'\n')
                 wait_for(b'Recording (maximum')
+                os.write(master, b'\n')
+                wait_for(b'[Enter] keep this take')
+                os.write(master, b'r\n')
+                messages.clear()
+                wait_for(b'Press Enter when ready')
+                os.write(master, b'\n')
+                wait_for(b'Recording (maximum')
+                os.write(master, b'\n')
+                wait_for(b'[Enter] keep this take')
                 os.write(master, b'\n')
                 self.assertEqual(process.wait(timeout=10), 0, messages)
                 audio = corpus / 'audio/negation.wav'

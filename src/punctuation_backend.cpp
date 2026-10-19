@@ -149,7 +149,7 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
         if (code == 130 || stop(cancelled, userdata)) { return 130; }
         if (code || !text) { return fail(stage); }
         stage = MIKA_PUNCTUATION_OUTPUT;
-        if (!mika_punctuation_preserves_words(raw, text.get())) { return fail(stage); }
+        if (!mika_punctuation_output_safe(raw, text.get())) { return fail(stage); }
         size_t length = std::strlen(text.get());
         stage = MIKA_PUNCTUATION_MEMORY;
         *out = static_cast<char *>(std::malloc(length + 1));

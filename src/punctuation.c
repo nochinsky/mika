@@ -61,7 +61,24 @@ int mika_punctuation_word_literal(const char *word, size_t length)
     return letters >= 2 && capitals == letters;
 }
 
-int mika_punctuation_preserves_words(const char *raw, const char *candidate)
+/* Recognize a narrow English negation context, not verbs, command spellings or
+ * intended meaning. A rejected candidate falls back wholesale to original raw.
+ * Original sentence punctuation is never reinterpreted. */
+static int negation(const unsigned char *word, const unsigned char *end)
+{
+    while (end > word && strchr(".,?!:;\"'", end[-1])) { --end; }
+    size_t length = (size_t)(end - word);
+    static const char *const terms[] = {"not", "no", "never", "without", "cannot"};
+    for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); ++i) {
+        if (strlen(terms[i]) != length) { continue; }
+        size_t j = 0;
+        while (j < length && fold(word[j]) == (unsigned char)terms[i][j]) { ++j; }
+        if (j == length) { return 1; }
+    }
+    return length >= 4 && fold(end[-3]) == 'n' && end[-2] == '\'' && fold(end[-1]) == 't';
+}
+
+static int preserves(const char *raw, const char *candidate, int protect_negation)
 {
     if (!mika_punctuation_input_valid(raw) || !candidate) { return 0; }
     /* Bound the result before comparing; the model can add one mark per word. */
@@ -73,12 +90,14 @@ int mika_punctuation_preserves_words(const char *raw, const char *candidate)
     if (length > 2u * MIKA_PUNCTUATION_MAX_INPUT + 16u) { return 0; }
     const unsigned char *a = (const unsigned char *)raw;
     const unsigned char *b = (const unsigned char *)candidate;
+    int previous_negation = 0;
     for (;;) {
         while (space(*a)) { ++a; }
         while (space(*b)) { ++b; }
         if (!*a || !*b) { return !*a && !*b; }
         const unsigned char *end = a;
         while (*end && !space(*end)) { ++end; }
+        int current_negation = protect_negation && negation(a, end);
         int literal = mika_punctuation_word_literal((const char *)a, (size_t)(end - a));
         unsigned char last = 0;
         while (*a && !space(*a)) {
@@ -91,8 +110,23 @@ int mika_punctuation_preserves_words(const char *raw, const char *candidate)
             if (last == '.' || last == ',' || last == '?' || last == '!' ||
                 last == ':' || last == ';' || last == '"' || last == '\'') { return 0; }
             if (*b != '.' && *b != ',' && *b != '?') { return 0; }
+            const unsigned char *rest = end;
+            while (space(*rest)) { ++rest; }
+            if (protect_negation && *rest && (*b == '.' || *b == '?') &&
+                (current_negation || previous_negation)) { return 0; }
             ++b;
             if (*b && !space(*b)) { return 0; }
         }
+        previous_negation = current_negation && last != '.' && last != '?' && last != '!';
     }
+}
+
+int mika_punctuation_preserves_words(const char *raw, const char *candidate)
+{
+    return preserves(raw, candidate, 0);
+}
+
+int mika_punctuation_output_safe(const char *raw, const char *candidate)
+{
+    return preserves(raw, candidate, 1);
 }

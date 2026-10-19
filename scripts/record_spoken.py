@@ -5,6 +5,7 @@ corpora outside Git. References are fixed before recording/recognition. Ctrl+C
 removes the unfinished take and retains accepted clips for an explicit retry.
 """
 import argparse
+import array
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
 from evaluate_spoken import load_manifest
 
 
@@ -75,6 +77,24 @@ def review_take(destination):
                                check=True, timeout=40)
 
 
+def warn_clipping(path):
+    """Flag obvious PCM saturation; never normalize, reject, or alter a take."""
+    with wave.open(str(path), 'rb') as source:
+        if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 2, 16000):
+            return
+        count = clipped = 0
+        while data := source.readframes(32768):
+            samples = array.array('h', data)
+            if sys.byteorder != 'little':
+                samples.byteswap()
+            count += len(samples)
+            clipped += sum(value in (-32768, 32767) for value in samples)
+    if count and clipped / count >= .01:
+        print(f'Warning: {100 * clipped / count:.1f}% of samples hit the audio limits; '
+              'the recording may be clipped/distorted. Lower input volume or move '
+              'farther from the microphone before a retake. This take is unchanged.')
+
+
 def display_prompt(case, index, total):
     """Separate delivery advice from the only text the speaker should read."""
     print(f"\n[{index}/{total}: {case['id']}]")
@@ -129,6 +149,7 @@ def main():
                 input('Press Enter when ready to record (Ctrl+C stops the session): ')
                 capture(destination, args.seconds)
                 print('Saved locally:', destination)
+                warn_clipping(destination)
                 if not args.review or review_take(destination):
                     break
                 destination.unlink()

@@ -19,6 +19,11 @@ int mika_punctuation_word_literal(const char *word, size_t length);
  * and at most one appended comma/period/question mark per existing word.
  * Original punctuation is retained. */
 int mika_punctuation_preserves_words(const char *raw, const char *candidate);
+/* Word preservation plus rejection of a new INTERNAL period/question mark
+ * immediately after an English negation or its next word. This is a bounded
+ * fallback guard, NOT a semantic guarantee. Original boundaries and final
+ * punctuation are retained; the caller uses raw unchanged on rejection. */
+int mika_punctuation_output_safe(const char *raw, const char *candidate);
 
 typedef enum {
     MIKA_PUNCTUATION_NONE,

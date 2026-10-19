@@ -69,6 +69,21 @@ class BenchmarkTools(unittest.TestCase):
             self.assertIn(b'--consent-save-audio is required', result.stderr)
             self.assertFalse(output.exists())
 
+    def test_capture_clipping_warning_does_not_change_audio(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'capture.wav'
+            for samples, warning in ((b'\x10\x00' * 3200, False), (b'\xff\x7f' * 3200, True)):
+                with self.subTest(warning=warning):
+                    with wave.open(str(path), 'wb') as output:
+                        output.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+                        output.writeframes(samples)
+                    before = path.read_bytes()
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        record_spoken.warn_clipping(path)
+                    self.assertEqual('may be clipped/distorted' in output.getvalue(), warning)
+                    self.assertEqual(path.read_bytes(), before)
+
     def test_speaker_advice_is_separate_from_spoken_text(self):
         cases = json.loads((ROOT / 'tests/spoken_prompt_cases.json').read_text(encoding='utf-8'))['cases']
         noted = [case for case in cases if case.get('speaker_note')]

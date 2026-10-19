@@ -35,10 +35,34 @@ int main(void)
     };
     for (size_t i = 0; i < sizeof(good)/sizeof(good[0]); ++i) {
         CHECK(mika_punctuation_preserves_words(good[i][0], good[i][1]));
+        CHECK(mika_punctuation_output_safe(good[i][0], good[i][1]));
     }
     for (size_t i = 0; i < sizeof(bad)/sizeof(bad[0]); ++i) {
         CHECK(!mika_punctuation_preserves_words(bad[i][0], bad[i][1]));
+        CHECK(!mika_punctuation_output_safe(bad[i][0], bad[i][1]));
     }
+    const char *unsafe_boundaries[][2] = {
+        {"do not execute cleanup", "Do not execute. Cleanup."},
+        {"not now inspect first", "Not. Now inspect first."},
+        {"never delete backups", "Never delete? Backups."},
+        {"do NOT, execute cleanup", "Do NOT, execute. Cleanup."},
+        {"don't remove backups", "Don't remove. Backups."},
+        {"CANNOT delete backups", "CANNOT delete. Backups."},
+        {"without changing files", "Without changing. Files."},
+        {"no changes allowed", "No changes. Allowed."},
+    };
+    for (size_t i = 0; i < sizeof(unsafe_boundaries)/sizeof(unsafe_boundaries[0]); ++i) {
+        CHECK(mika_punctuation_preserves_words(unsafe_boundaries[i][0], unsafe_boundaries[i][1]));
+        CHECK(!mika_punctuation_output_safe(unsafe_boundaries[i][0], unsafe_boundaries[i][1]));
+    }
+    CHECK(mika_punctuation_output_safe("do not execute", "Do not execute."));
+    CHECK(mika_punctuation_output_safe("don't. inspect files", "Don't. Inspect files."));
+    CHECK(mika_punctuation_output_safe("not now inspect files", "Not now, inspect files."));
+    CHECK(mika_punctuation_output_safe("notebook changes now inspect files", "Notebook changes. Now inspect files."));
+    /* Deliberately beyond the one-word scope: do not claim a semantic parser. */
+    CHECK(mika_punctuation_output_safe("not ever execute cleanup", "Not ever execute. Cleanup."));
+    CHECK(!mika_punctuation_output_safe(NULL, "text"));
+    CHECK(!mika_punctuation_output_safe("text", NULL));
     CHECK(!mika_punctuation_input_valid(NULL));
     CHECK(!mika_punctuation_input_valid("caf\xc3\xa9"));
     CHECK(!mika_punctuation_input_valid("bad\x01"));

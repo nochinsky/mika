@@ -60,6 +60,16 @@ class Native(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, EXPECTED + '\n')
 
+    def test_new_internal_boundary_after_negated_verb_keeps_raw(self):
+        # Independently authored text; no private recording/transcript fixture.
+        text = 'check the changes but not run remove dash dash recursive'
+        result = self.run_probe(text)
+        self.assertEqual((result.returncode, result.stdout), (1, text + '\n'))
+        self.assertIn('failure=5', result.stderr)
+        final = self.run_probe('do not execute')
+        self.assertEqual(final.returncode, 0, final.stderr)
+        self.assertEqual(words(final.stdout), words('do not execute'))
+
     def test_native_long_all_words_in_order(self):
         phrase = 'and so my fellow americans ask not what your country can do for you ask what you can do for your country'
         text = ' '.join([phrase] * 34)
@@ -300,6 +310,14 @@ class Controls(unittest.TestCase):
         self.assertEqual(process.finish(), (0, (SHORT + '\n').encode()))
         self.assertIn(b'formatting data is missing', process.messages)
         self.assertIn(b'keeping the raw transcript', process.messages)
+
+    def test_rejected_negation_boundary_is_successful_raw_fallback(self):
+        text = 'check the changes but not run remove dash dash recursive'
+        process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT=text)
+        self.assertEqual(process.finish(), (0, (text + '\n').encode()))
+        self.assertIn(b'formatting result was rejected', process.diagnostics)
+        self.assertIn(b'keeping the raw transcript', process.diagnostics)
+        self.assertNotIn(text.encode(), process.diagnostics)
 
     def test_unsupported_text_falls_back_without_losing_unicode(self):
         process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT='café near paris')

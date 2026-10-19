@@ -3,9 +3,9 @@
 Mika is a one-shot English dictation CLI, not a configurable speech platform.
 Its contract is **run → speak → Enter → one transcript on stdout → exit**.
 There is no daemon, agent submission, clipboard action or saved-audio runtime mode.
-The new admission work is on the `feat/readiness` review branch; it does not update
-the already published v0.2.0 binaries or the locally installed Mika. No stable Mac
-release or physical-Mac acceptance is claimed.
+The source includes safeguards newer than the published v0.2.0 binaries; an
+installed release changes only through an explicit installation/update. No stable
+Mac release or physical-Mac acceptance is claimed.
 
 ## Runtime path
 
@@ -30,8 +30,10 @@ release or physical-Mac acceptance is claimed.
    cannot bypass admission. Cancellation/failure never publishes partial ASR text.
 6. Default mode passes text to the native FullStop formatter. The renderer and
    final guard preserve transcript words/order and obvious literals. Ordinary
-   formatting failure falls back to raw with a warning; invalid/unusable output
-   is not silently submitted. Only a successful result reaches stdout.
+   formatting failure falls back to raw with a warning. A bounded guard rejects
+   new internal sentence breaks immediately after a negation or its next word;
+   it does not repair ASR words or guarantee semantic accuracy. Invalid/unusable
+   output is not silently submitted. Only a successful result reaches stdout.
 7. Common cleanup stops capture and frees sessions before their borrowed models,
    restores terminal modes, and exits. Synchronous third-party work can delay
    cancellation until it returns. Audio remains in memory and is never saved.
@@ -74,6 +76,24 @@ unattended execution permission is implied by exit 0.
 The default threshold/minimum-duration choice remains provisional pending real
 consented dictation evidence. Do not tune on a single speaker/public fixture or
 substitute phrase blacklists, energy thresholds or nonempty text for validation.
+
+## Technical dictation limits
+
+The pinned Granite5CTC implementation uses greedy CTC collapse. This family does
+not advertise vocabulary/context-prompt or ITN controls: passing generic API
+fields does not create technical biasing (unsupported controls are ignored with
+an upstream warning). There is no supported beam-search setting here to turn up.
+Mixed word/digit version strings and misheard identifiers can therefore originate
+in ASR before formatting. FullStop preserves those source tokens; it is not a
+version parser or a technical-spelling repair system. Do not add post-hoc
+reference alternatives or guessed corrections to make a score improve.
+
+Capture quality is a separate prerequisite. Flat-topped/saturated input loses
+information before decoding. Reducing a saved clipped waveform cannot recover
+it; good input levels and microphone placement should be checked before changing
+models. The explicit saved-audio developer recorder warns about substantial
+PCM saturation but never changes the waveform or OS input settings. Neither that
+warning nor public-file tests establish an accurate transcript.
 
 ## Tests and evidence
 

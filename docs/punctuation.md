@@ -27,6 +27,15 @@ existing camelCase/PascalCase and uppercase acronyms. This is conservative: raw
 `c++` stays `c++`, not `C++`. It is not a guarantee that every bare code identifier
 will be recognized or that copied output is executable code.
 
+A second, narrow rejection guard also refuses a **new internal period or question
+mark immediately after a negation or its next word** (for example, splitting
+“not execute cleanup” after “execute”). It covers `not`, `no`, `never`, `without`,
+`cannot` and ASCII `n't` contractions. The whole candidate is discarded and the
+original raw text is used with a warning; no replacement punctuation is invented.
+Existing sentence boundaries and final punctuation remain allowed. This can
+conservatively reject a valid sentence break. It does **not** parse scope beyond
+one following word, repair a missing negation, or guarantee preserved meaning.
+
 Supported text is ASCII, at most **32,768 bytes / 96 bytes per word**. Unsupported
 text stays raw rather than risking character damage. Sequential **254-subword
 windows / 16 overlap** keep attention memory bounded; source indices retain every
@@ -45,7 +54,11 @@ avoid registry/TLS teardown hazards; sessions, tensors and text are freed normal
 
 ## Quality evidence and release policy
 
-The original [30 references](../tests/punctuation_cases.json) remain unchanged:
+The original [30 references](../tests/punctuation_cases.json) remain unchanged.
+The negation-boundary safeguard reproduced the same metrics and zero fallbacks
+on both public corpora; a separate authored negative-instruction regression tests
+intentional raw fallback. These small corpora do not establish semantic safety:
+
 
 | Metric | Original 30 | Additional 60 |
 | --- | ---: | ---: |

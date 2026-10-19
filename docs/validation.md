@@ -146,7 +146,11 @@ Read each prompt naturally after starting it; Enter ends the clip, with an
 automatic 20-second maximum (configurable up to 30). The manifest is fixed before
 recording. Owner-only permissions are used for new files. Existing corpora are
 never overwritten. Ctrl+C discards the unfinished clip and keeps accepted clips.
-Listen for capture/truncation problems **before** running recognition. A stopped
+Listen for capture/truncation problems **before** running recognition. The recorder
+warns if at least 1% of PCM samples hit the exact audio limits; this is a clipping
+indicator, not a speech/accuracy judgment. It never changes levels or audio. If
+needed, lower the system input level or move farther away before a capture retake;
+turning down an already clipped file cannot recover lost detail. A stopped
 session's manifest can include missing clips; evaluation rejects it explicitly.
 Choose a new directory for another session. Delete private corpora when finished.
 

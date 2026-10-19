@@ -1,4 +1,5 @@
 """Offline CLI/PTY tests. All recording tests use fake devices, never a real mic."""
+import errno
 import os
 from pathlib import Path
 import signal
@@ -32,12 +33,21 @@ if os.name == "posix":
 
             def session():
                 os.setsid()
+                # BSD does not implicitly give a newly acquired PTY our group.
+                signal.signal(signal.SIGTTOU, signal.SIG_IGN)
                 fcntl.ioctl(self.slave, termios.TIOCSCTTY, 0)
+                os.tcsetpgrp(self.slave, os.getpgrp())
+                signal.signal(signal.SIGTTOU, signal.SIG_DFL)
 
             self.process = subprocess.Popen(
                 [binary, *args], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
                 env={**os.environ, **(env or {})}, preexec_fn=session,
             )
+            # Only the child owns the slave. Keeping an extra BSD slave open can
+            # block session revocation/process exit. The master accepts termios
+            # queries too, including the live-parent-shell restoration check.
+            os.close(self.slave)
+            self.slave = None
 
         def wait_for(self, marker, timeout=10):
             deadline = time.monotonic() + timeout
@@ -56,30 +66,69 @@ if os.name == "posix":
 
         def finish(self):
             try:
-                output, diagnostics = self.process.communicate(timeout=10)
-                self.diagnostics = diagnostics or b''
-                while select.select([self.master], [], [], 0)[0]:
-                    self.messages += os.read(self.master, 4096)
-                after = termios.tcgetattr(self.slave)
-                if after != self.before:
-                    raise AssertionError("terminal modes were not restored")
-                return self.process.returncode, output
+                # BSD can wait for PTY output drain during session exit. Read
+                # terminal/status and redirected streams concurrently, never wait
+                # for exit first (nor spin on the master's EOF).
+                streams = {self.master: 'terminal'}
+                for name in ('stdout', 'stderr'):
+                    stream = getattr(self.process, name)
+                    if stream is not None and not stream.closed:
+                        streams[stream.fileno()] = name
+                captured = {'stdout': b'', 'stderr': b''}
+                deadline = time.monotonic() + 10
+                while streams:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise AssertionError(f'PTY process did not finish: {self.messages!r}')
+                    ready, _, _ = select.select(list(streams), [], [], min(remaining, .1))
+                    for fd in ready:
+                        try:
+                            chunk = os.read(fd, 65536)
+                        except OSError as error:
+                            if fd != self.master or error.errno != errno.EIO:
+                                raise
+                            chunk = b''  # Linux master EOF.
+                        if not chunk:
+                            del streams[fd]
+                        elif streams[fd] == 'terminal':
+                            self.messages += chunk
+                        else:
+                            captured[streams[fd]] += chunk
+                self.process.wait(timeout=max(.01, deadline - time.monotonic()))
+                self.diagnostics = captured['stderr']
+                self.assert_restored()
+                return self.process.returncode, captured['stdout']
             finally:
                 self.close()
 
+        def assert_restored(self):
+            try:
+                after = termios.tcgetattr(self.master)
+            except termios.error as error:
+                # Darwin revokes the PTY when its session leader exits. Its
+                # post-exit mode is unobservable; a live-shell test below checks
+                # restoration before that revoke, rather than skipping it.
+                if sys.platform == 'darwin' and error.args[0] in (errno.EIO, errno.ENXIO):
+                    return
+                raise
+            if after != self.before:
+                raise AssertionError('terminal modes were not restored')
+
         def close(self):
-            if self.process.poll() is None:
-                self.process.kill()
-                self.process.wait()
-            if self.process.stdout:
-                self.process.stdout.close()
-            if self.process.stderr:
-                self.process.stderr.close()
+            # Close the PTY before waiting for a killed BSD session leader; its
+            # exit/revoke can otherwise wait on our still-open terminal handles.
             for name in ("master", "slave"):
                 fd = getattr(self, name, None)
                 if fd is not None:
                     os.close(fd)
                     setattr(self, name, None)
+            if self.process.poll() is None:
+                self.process.kill()
+                self.process.wait(timeout=5)
+            if self.process.stdout:
+                self.process.stdout.close()
+            if self.process.stderr:
+                self.process.stderr.close()
 
 
 class Arguments(unittest.TestCase):
@@ -149,10 +198,26 @@ class Controls(unittest.TestCase):
         process = TerminalProcess(env=env)
         self.addCleanup(process.close)
         process.wait_for(b"Listening 00:")
-        modes = termios.tcgetattr(process.slave)
+        modes = termios.tcgetattr(process.master)
         self.assertFalse(modes[3] & termios.ECHO)
         self.assertFalse(modes[3] & termios.ICANON)
         return process
+
+    def test_restore_while_parent_shell_keeps_session_alive(self):
+        import shlex
+        # A shell survives the CLI, so BSD cannot revoke its controlling PTY
+        # before the parent observes restoration (success and cancellation).
+        command = ('trap "" INT TERM; ' + shlex.quote(FIXTURE) + ' --raw; result=$?; '
+                   'printf "CHILD_STATUS:%s\\n" "$result" >&2; read -r ack; exit "$result"')
+        for key, expected in ((b'\r', (0, b'Test transcript.\n')), (b'\x1b', (130, b'')), (b'\x03', (130, b''))):
+            process = TerminalProcess(binary='/bin/bash', args=('-c', command))
+            self.addCleanup(process.close)
+            process.wait_for(b'Listening 00:')
+            process.send(key)
+            process.wait_for(f'CHILD_STATUS:{expected[0]}'.encode())
+            self.assertEqual(termios.tcgetattr(process.master), process.before)
+            process.send(b'ack\n')
+            self.assertEqual(process.finish(), expected)
 
     def test_enter_prints_only_transcript(self):
         process = self.start()
@@ -273,10 +338,12 @@ class Controls(unittest.TestCase):
         process = self.start()
         process.process.stdout.close()
         process.send(b"\r")
-        status = process.process.wait(timeout=10)
+        status, _ = process.finish()
         self.assertIn(status, (-signal.SIGPIPE, 1))
-        self.assertEqual(termios.tcgetattr(process.slave), process.before)
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    if sys.platform == 'darwin':
+        import faulthandler
+        faulthandler.dump_traceback_later(60, repeat=True)
+    unittest.main(verbosity=2, failfast=True)

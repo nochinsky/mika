@@ -19,6 +19,9 @@ extern "C" {
 #else
 #include <dlfcn.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 namespace {
@@ -31,6 +34,13 @@ fs::path executable_directory()
     DWORD n = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
     if (!n || n >= path.size()) { throw std::runtime_error("executable path"); }
     return fs::path(std::wstring(path.data(), n)).parent_path();
+#elif defined(__APPLE__)
+    uint32_t length = 0;
+    _NSGetExecutablePath(nullptr, &length);
+    if (!length || length > 1048576u) { throw std::runtime_error("executable path"); }
+    std::vector<char> path(length);
+    if (_NSGetExecutablePath(path.data(), &length) != 0) { throw std::runtime_error("executable path"); }
+    return fs::canonical(fs::path(path.data())).parent_path();
 #else
     std::vector<char> path(32768);
     ssize_t n = readlink("/proc/self/exe", path.data(), path.size());
@@ -53,6 +63,8 @@ class Library {
                 handle_ = nullptr;
             }
         }
+#elif defined(__APPLE__)
+        handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #else
         handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
 #endif
@@ -63,9 +75,11 @@ class Library {
          * Sessions and returned text are freed promptly; no resident service. */
 #ifdef _WIN32
         FreeLibrary(handle_);
-#else
+#elif !defined(__APPLE__)
         dlclose(handle_);
 #endif
+        /* Darwin has no portable RTLD_NODELETE. Intentionally retain the dlopen
+         * reference until process exit, just as we pin modules on Windows. */
     }
     Library(const Library &) = delete;
     Library &operator=(const Library &) = delete;
@@ -130,6 +144,9 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
 #ifdef _WIN32
         Library runtime(base / "onnxruntime.dll");
         Library backend(base / "mika-fullstop.dll");
+#elif defined(__APPLE__)
+        Library runtime(base / "libonnxruntime.dylib");
+        Library backend(base / "libmika-fullstop.dylib");
 #else
         Library runtime(base / "libonnxruntime.so");
         Library backend(base / "libmika-fullstop.so");

@@ -42,6 +42,7 @@ HEADERS = {
     'onnxruntime_error_code.h': (2775, '5ce3b054e798eced8d14f5b86e98692fd33470463f96194ce0700a2d53dd8721'),
 }
 SDK = {
+    'macos': ('osx-arm64-shared-no-tts-lib', 8292111, 'f3e0cbd86cc3f38dad30c97921b40e9a8bcc6f2c943777eb76ad77176993e417', ['libonnxruntime.dylib']),
     'linux': ('linux-x64-shared-no-tts-lib', 9249201, 'bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b', ['libonnxruntime.so']),
     'windows': ('win-x64-shared-MT-Release-no-tts-lib', 7536080, 'a1253e665c4f236119c443c8932a8acfca32a546c78c05962d483c9a0eae21b7', ['onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'onnxruntime.lib']),
 }

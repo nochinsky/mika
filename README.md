@@ -23,6 +23,9 @@ Install as your normal user—no sudo/admin, compiler, or Python needed.
 Prebuilt releases support **x86-64 Linux (glibc 2.35+)** and **Windows 10/11 x64**.
 Restart your terminal if `mika` is not found.
 
+**macOS:** an [experimental Apple Silicon CPU-only build](docs/macos.md) is available
+through branch CI artifacts. It is not yet a stable release; Intel Macs are not supported.
+
 ## Use
 
 ```sh

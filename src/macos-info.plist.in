@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>org.nochinsky.mika</string>
+    <key>CFBundleName</key><string>Mika</string>
+    <key>CFBundleVersion</key><string>@PROJECT_VERSION@</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Mika uses your microphone for offline dictation. Audio stays in memory and is not saved or uploaded.</string>
+</dict>
+</plist>

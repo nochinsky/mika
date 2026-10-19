@@ -280,6 +280,9 @@ void mika_lock_release(MikaFileLock *lock)
 #include <signal.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#ifdef __APPLE__
+#include <sys/select.h>
+#endif
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -323,7 +326,7 @@ MikaTerminal *mika_terminal_open(void)
 {
     MikaTerminal *terminal = malloc(sizeof(*terminal));
     if (!terminal) { return NULL; }
-    terminal->fd = open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC);
+    terminal->fd = open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC | O_NONBLOCK);
     if (terminal->fd < 0 || tcgetattr(terminal->fd, &terminal->original_mode) != 0) {
         if (terminal->fd >= 0) { close(terminal->fd); }
         free(terminal);
@@ -333,7 +336,9 @@ MikaTerminal *mika_terminal_open(void)
     mode.c_lflag &= (tcflag_t)~(ICANON | ECHO | IEXTEN);
     mode.c_lflag |= ISIG;
     mode.c_iflag &= (tcflag_t)~(IXON | ICRNL);
-    mode.c_cc[VMIN] = 0;
+    /* With VMIN=0 Darwin can report an empty read as immediately ready.
+       Require one byte for readiness; O_NONBLOCK still prevents a raced read. */
+    mode.c_cc[VMIN] = 1;
     mode.c_cc[VTIME] = 0;
     if (tcsetattr(terminal->fd, TCSANOW, &mode) != 0) {
         close(terminal->fd);
@@ -345,11 +350,23 @@ MikaTerminal *mika_terminal_open(void)
 
 int mika_terminal_key(MikaTerminal *terminal, unsigned timeout_ms)
 {
+#ifdef __APPLE__
+    /* select is supported for Darwin terminal devices, including /dev/tty. */
+    if (terminal->fd >= FD_SETSIZE) { return MIKA_KEY_ERROR; }
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(terminal->fd, &readable);
+    struct timeval wait = {(time_t)(timeout_ms / 1000u), (suseconds_t)((timeout_ms % 1000u) * 1000u)};
+    int result = select(terminal->fd + 1, &readable, NULL, NULL, &wait);
+#else
     struct pollfd item = {terminal->fd, POLLIN, 0};
     int result = poll(&item, 1, (int)timeout_ms);
+#endif
     if (result < 0) { return errno == EINTR ? MIKA_KEY_TIMEOUT : MIKA_KEY_ERROR; }
     if (!result) { return MIKA_KEY_TIMEOUT; }
+#ifndef __APPLE__
     if (item.revents & (POLLERR | POLLHUP | POLLNVAL)) { return MIKA_KEY_ERROR; }
+#endif
     unsigned char key;
     ssize_t bytes = read(terminal->fd, &key, 1);
     if (bytes < 0 && (errno == EINTR || errno == EAGAIN)) { return MIKA_KEY_TIMEOUT; }

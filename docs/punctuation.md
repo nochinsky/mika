@@ -140,6 +140,11 @@ A separate [Core Ultra 5 laptop validation](laptop-validation.md) reproduces the
 quality scores and reports actual microphone startup plus 10/60/300-second file
 pipeline latency/memory. It does not claim natural spoken-prompt accuracy.
 
+Experimental Apple Silicon builds use the same weights and native CPU-only
+formatter through pinned ARM64 `libonnxruntime.dylib`; see [macOS status](macos.md).
+The upstream runtime may include unused Core ML provider code, but Mika selects
+only the default CPU provider. No GPU/Core ML execution provider is appended.
+
 ## Provenance and licenses
 
 Exact URLs/hashes: [fetcher](../scripts/fetch_punctuation.py). FullStop English

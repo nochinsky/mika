@@ -12,6 +12,10 @@ function(mika_warnings target)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
         target_compile_definitions(${target} PRIVATE _POSIX_C_SOURCE=200809L)
+        if(APPLE)
+            # Keep safe-open/flock extensions visible alongside POSIX on Darwin.
+            target_compile_definitions(${target} PRIVATE _DARWIN_C_SOURCE=1)
+        endif()
     endif()
 endfunction()
 

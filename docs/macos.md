@@ -12,29 +12,40 @@ contains unused Core ML provider support and links that system framework; that
 is not a request to run inference on it. Apple's Accelerate CPU BLAS is used by
 the pinned speech decoder; it is not a Metal/Core ML inference backend.
 
-## Status and how to try it
+## Install and update
 
-This branch builds an **experimental CI artifact**, not a published stable Mac
-release. Do not use the Linux archive or assume the latest stable release has a
-Mac asset. Download `experimental-macos-arm64` from a successful branch workflow;
-it contains `mika-macos-arm64.tar.gz` and its adjacent `.sha256` file. Keep both.
-Check out the same branch's scripts, then install locally without root, Homebrew,
-Python or a compiler:
+**v0.3.0 and later include a public Mac download** alongside Linux and Windows:
+[`mika-macos-arm64.tar.gz` and its checksum](https://github.com/nochinsky/mika/releases/latest).
+Mac support remains **experimental**, not hardware-certified stable support.
+Native hosted ARM64 tests pass, but the physical-device checklist below is pending.
+
+Install, or rerun to update, as your normal user without root, Homebrew, Python or
+a compiler:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | bash
+```
+
+Restart your terminal if `mika` is not found, then run `mika --version` and `mika`.
+Speak after Listening; Enter finishes, Esc/Ctrl+C cancels. The terminal may need
+microphone permission; see the limitations below.
+
+For an explicit version instead of latest:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | MIKA_VERSION=v0.3.0 bash
+```
+
+For manual/offline app installation, download both archive and adjacent `.sha256`
+from the same release and save its `install-macos.sh` source, then run:
 
 ```sh
 MIKA_ARCHIVE_PATH="$HOME/Downloads/mika-macos-arm64.tar.gz" bash install-macos.sh
 ```
 
-When a matching Mac release is explicitly published, the remote installer uses
-the same pattern as other platforms (use the script from that release/branch):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/feat/macos-cpu/install-macos.sh | bash
-```
-
-That network-only command will **not work before a Mac release asset exists**.
-`MIKA_VERSION`, `MIKA_REINSTALL=1` and `MIKA_ARCHIVE_PATH` work like the Linux and
-Windows installers. Downloads use HTTPS, limits and SHA-256. Archives may contain
+The first Granite model download is separate and requires network/consent; a fully
+offline dictation machine must already have that verified model. `MIKA_VERSION`,
+`MIKA_REINSTALL=1` and `MIKA_ARCHIVE_PATH` work like the Linux and Windows installers. Downloads use HTTPS, limits and SHA-256. Archives may contain
 only regular files/directories under `mika/`; symlinks and special files are
 rejected. A failed directory swap restores the previous app. The speech model
 is consented separately on first run and is kept across app updates.
@@ -47,10 +58,17 @@ your terminal. XDG data paths are not used for the Mac model directory.
 Removal (one confirmation, removes the managed app and fixed cached model):
 
 ```sh
-bash uninstall-macos.sh
-# Or use the script on the experimental branch:
-curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/feat/macos-cpu/uninstall-macos.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | bash
 ```
+
+To remove the app but keep the downloaded Granite model:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | MIKA_KEEP_MODEL=1 bash
+```
+
+To repair damaged app data, close Mika and rerun the installer with
+`MIKA_REINSTALL=1`.
 
 `--keep-model` / `MIKA_KEEP_MODEL=1` preserves weights; `--yes` /
 `MIKA_UNINSTALL_YES=1` deliberately skips confirmation. Notes outside the app,
@@ -70,7 +88,7 @@ Microphone and the system's default input. Permission prompts, denial/recovery,
 real capture and terminal application behavior need testing on a physical Mac.
 An automated public-file/PTY result is **not** evidence that these work.
 
-CI artifacts are **ad-hoc signed**, not Developer ID-signed/notarized. SHA-256
+Release binaries are **ad-hoc signed**, not Developer ID-signed/notarized. SHA-256
 checksums detect corruption, not a compromised publisher. Gatekeeper/trust and
 permission behavior on downloaded artifacts remain part of real-Mac acceptance;
 no script disables Gatekeeper, strips quarantine or changes OS security policy.
@@ -124,4 +142,8 @@ utilities. It checks ARM64 architecture, disabled GPU backend flags, signatures,
 system-only dylib dependencies, installed/relocated inference and removal. The
 Mac runtime archive is separately pinned in `scripts/fetch_punctuation.py`.
 Local Linux script mocks are only logic tests, not proof of Darwin behavior.
-No automated step records a microphone or packages test executables/private audio.
+The tag publication job waits for this Mac lane and both other platforms, then
+requires all three archives/checksums with matching versions before making a
+release public. Branch workflows also expose the `mika-macos-arm64` artifact for
+development testing. No automated step records a microphone or packages test
+executables/private audio.

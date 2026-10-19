@@ -18,6 +18,19 @@ class Metadata(unittest.TestCase):
         self.assertIn('"@PROJECT_VERSION@"', (ROOT / 'src/mika_version.h.in').read_text())
         self.assertIn('"mika/" MIKA_VERSION', (ROOT / 'src/model.c').read_text())
 
+    def test_release_waits_for_and_publishes_all_platforms(self):
+        workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        mac = workflow.split('  macos-cpu:', 1)[1].split('  uninstallers:', 1)[0]
+        self.assertIn('name: mika-macos-arm64', mac)
+        publish = workflow.split('  release:', 1)[1]
+        self.assertIn('needs: [uninstallers, model-free, package, macos-cpu]', publish)
+        self.assertIn('pattern: mika-*', publish)
+        self.assertIn('scripts/check_release_assets.py --directory dist', publish)
+        self.assertIn('--verify-tag --draft', publish)
+        self.assertIn('--draft=false --latest', publish)
+        version = json.loads((ROOT / 'vcpkg.json').read_text(encoding='utf-8'))['version-string']
+        self.assertIn('Mika v' + version, (ROOT / '.github/release-notes.md').read_text(encoding='utf-8'))
+
     def test_native_asset_identities_match_fetcher(self):
         source = (ROOT / 'src/punctuation_backend.cpp').read_text()
         for name, expected in [('model', assets.QUANTIZED), ('vocab', assets.ARTIFACTS['sp.model'][1:])]:

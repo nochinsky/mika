@@ -19,12 +19,20 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | ba
 irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
 ```
 
-Install as your normal user—no sudo/admin, compiler, or Python needed.
-Prebuilt releases support **x86-64 Linux (glibc 2.35+)** and **Windows 10/11 x64**.
-Restart your terminal if `mika` is not found.
+**macOS — Apple Silicon, macOS 14+ (experimental)**
 
-**macOS:** an [experimental Apple Silicon CPU-only build](docs/macos.md) is available
-through branch CI artifacts. It is not yet a stable release; Intel Macs are not supported.
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | bash
+```
+
+Install as your normal user—no sudo/admin, compiler, Homebrew, or Python needed.
+Prebuilt downloads: **x86-64 Linux (glibc 2.35+)**, **Windows 10/11 x64**, and
+**Apple Silicon ARM64 macOS 14+**. Restart your terminal if `mika` is not found.
+
+Mac downloads are included starting with **v0.3.0**, but support is experimental:
+native automated tests pass; physical microphone/permission/Gatekeeper checks
+remain pending. Builds are ad-hoc signed, **not notarized**. Intel/Rosetta Macs are
+not supported. See [Mac setup and limitations](docs/macos.md).
 
 ## Use
 
@@ -72,6 +80,12 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | 
 
 ```powershell
 irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
+```
+
+**macOS — Apple Silicon**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | bash
 ```
 
 [Removal details & keeping the model](docs/usage.md#uninstalling).

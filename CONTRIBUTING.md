@@ -124,8 +124,9 @@ This is not an installer-managed app. Move a regular `~/.local/bin/mika` aside
 before switching to the release installer's symlink.
 
 For portable releases follow [.github/workflows/build.yml](.github/workflows/build.yml):
-Ubuntu 22.04/glibc 2.35 and native Windows Server 2022, pinned static curl/crypto,
-CPU-dispatched speech modules, and the existing formatter payload. A system-library
+Ubuntu 22.04/glibc 2.35, native Windows Server 2022 and native Apple Silicon
+macOS 14+, pinned static curl/crypto, CPU-dispatched Linux/Windows speech modules,
+a static Mac CPU backend, and the existing formatter payload. A system-library
 source build is **not** a standalone release just because dispatch is enabled.
 CI validates default/raw inference after real installation/relocation, console and
 installer transactions, integrity/fallback/cancellation, and public five-minute
@@ -140,5 +141,11 @@ sensitive dependencies deliberately; do not automatically chase new speech model
 
 For a release: update the CMake project version and `vcpkg.json` together, update
 release notes/docs, validate all three native platform jobs, then push the matching `vX.Y.Z` tag.
+The release job depends on all three platforms (including `macos-cpu`), downloads
+all three `mika-*` artifacts, and checks the exact six-file archive/checksum set,
+embedded versions and SHA-256 values. It uploads into a draft and only makes it
+public/latest after all assets are present. Mac remains labeled experimental in
+release notes/docs until physical-device acceptance; publishing its asset does
+not imply notarization or hardware approval.
 The generated version header also supplies the downloader user-agent. Do not rewrite
 published tags. Keep original Mika MIT code separate from model/dependency licenses.

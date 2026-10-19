@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(mika VERSION 0.2.0 LANGUAGES C CXX)
+project(mika VERSION 0.3.0 LANGUAGES C CXX)
 configure_file(src/mika_version.h.in generated/mika_version.h @ONLY)
 if(APPLE)
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" OR
@@ -190,7 +190,7 @@ if(BUILD_TESTING)
     mika_warnings(mika-audio-devices)
 
     if(Python3_Interpreter_FOUND)
-        foreach(test IN ITEMS spoken_evaluation benchmark_tools speech_assets)
+        foreach(test IN ITEMS spoken_evaluation benchmark_tools speech_assets release_assets)
             add_test(NAME ${test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.py")
             set_tests_properties(${test} PROPERTIES TIMEOUT 30)
         endforeach()

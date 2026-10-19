@@ -11,6 +11,9 @@ stdout is redirected. SSH does not forward a microphone automatically.
 - **WSL:** use the Linux installer. WSLg/host audio input and Windows microphone
   permission must work; an input-device listing alone does not prove capture.
 - **Windows:** enable microphone access for desktop apps and select the correct input.
+- **macOS 14+ Apple Silicon (experimental):** select your default input and check
+  terminal permission under Privacy & Security → Microphone. Downloads are ad-hoc
+  signed, not notarized; [physical-device/trust checks remain pending](macos.md).
 
 `mika --help` shows controls and the model location; `mika --version` shows the
 installed version. Status uses a single transient stderr line, including in classic
@@ -59,18 +62,18 @@ replaced with it. Missing/damaged speech-detection data fails closed with exit 1
 reinstall the app rather than bypassing the check.
 There is no background updater or automatic network check when you launch Mika.
 
-Advanced environment variables, identical on both installers:
+Advanced environment variables, shared by the Linux, Windows and Mac installers:
 
 | Variable | Purpose |
 | --- | --- |
-| `MIKA_VERSION` | Explicit release tag, e.g. `v0.2.0`, instead of latest. Can deliberately select an older version. |
+| `MIKA_VERSION` | Explicit release tag, e.g. `v0.3.0`, instead of latest. Can deliberately select an older version. |
 | `MIKA_REINSTALL=1` | Force a clean reinstall even when the release is current. |
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive with an adjacent `.sha256` file. |
 
 Manual archives are on [GitHub Releases](https://github.com/nochinsky/mika/releases).
 Archives include fixed formatting weights/runtime and a 1.24 MB CPU speech
 classifier, but not the 279 MB Granite ASR model. Installers never open a microphone or separately fetch the speech model.
-You can inspect either installer before executing it. Release archives are not independently
+You can inspect each installer before executing it. Release archives are not independently
 signed; adjacent checksums detect corruption, not a compromised publisher.
 No machine-wide PowerShell execution-policy change is made.
 
@@ -80,6 +83,10 @@ No machine-wide PowerShell execution-policy change is made.
 | --- | --- | --- |
 | Linux / WSL | `${XDG_DATA_HOME:-$HOME/.local/share}/mika/app` | Same parent, `models/` |
 | Windows | `%LOCALAPPDATA%\Mika\app` | `%LOCALAPPDATA%\Mika\models` |
+| macOS (experimental) | `~/Library/Application Support/Mika/app` | Same parent, `models/` |
+
+Mac creates `~/.local/bin/mika` and a marked PATH block for Zsh/Bash or a Fish
+configuration entry; rerun its installer to update. See [Mac install/repair/removal](macos.md).
 
 Linux creates `~/.local/bin/mika` and a marked PATH block in your shell profile
 (or a Fish `conf.d/mika.fish` file). Relative/empty `XDG_DATA_HOME` falls back to
@@ -97,7 +104,13 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | 
 irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
 ```
 
-Both show what will be removed and ask once before making changes. Default/Enter
+For macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | bash
+```
+
+All three show what will be removed and ask once before making changes. Default/Enter
 cancels. Linux reads confirmation from the controlling terminal, not the piped
 script. Noninteractive use requires explicit unattended consent.
 

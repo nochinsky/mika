@@ -2,6 +2,7 @@
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -13,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Package(unittest.TestCase):
-    def build(self, platform, extra=None, missing=None):
+    def build(self, platform, extra=None, missing=None, change_speech=None):
         temporary = tempfile.TemporaryDirectory(prefix='Mika package ü ')
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -25,6 +26,7 @@ class Package(unittest.TestCase):
         windows = platform == 'windows'
         (binary / ('mika.exe' if windows else 'mika')).write_bytes(b'app')
         (binary / 'mika-inference-test').write_bytes(b'must not ship')
+        (binary / 'granite-speech.gguf').write_bytes(b'downloaded ASR must not ship')
         names = {'model.int8.onnx', 'sp.model'} | (
             {'mika-fullstop.dll', 'onnxruntime.dll', 'onnxruntime_providers_shared.dll'} if windows
             else {'libmika-fullstop.dylib', 'libonnxruntime.dylib'} if platform == 'macos'
@@ -36,6 +38,12 @@ class Package(unittest.TestCase):
             (stage / 'lib/libggml-cpu-test.so').write_bytes(b'test library')
         if extra:
             (payload / extra).write_bytes(b'must not ship')
+        speech = binary / 'speech'
+        speech.mkdir()
+        (speech / 'silero-vad-v6.2-F32.gguf').write_bytes(b'tiny fake VAD')
+        (speech / 'LICENSE.txt').write_text('test Silero notice')
+        if change_speech:
+            change_speech(speech)
         result = subprocess.run([sys.executable, ROOT / 'scripts/package.py', '--stage', stage,
                                  '--output', root / 'dist', '--platform', platform, '--version', 'vtest'],
                                 capture_output=True, timeout=30)
@@ -55,7 +63,12 @@ class Package(unittest.TestCase):
                     names = bundle.namelist()
             self.assertIn('mika/bin/punctuation/model.int8.onnx', names)
             self.assertIn('mika/bin/punctuation/licenses/NOTICE.txt', names)
-            self.assertFalse(any('inference-test' in name or name.endswith('.gguf') for name in names))
+            self.assertIn('mika/bin/speech/LICENSE.txt', names)
+            self.assertEqual([name for name in names if name.endswith('.gguf')],
+                             ['mika/bin/speech/silero-vad-v6.2-F32.gguf'])
+            self.assertFalse(any('inference-test' in name for name in names))
+            if platform == 'linux':
+                self.assertIn('mika/lib/libggml-cpu-test.so', names)
             self.assertEqual(Path(str(archive) + '.sha256').read_text().split()[0],
                              hashlib.sha256(archive.read_bytes()).hexdigest())
 
@@ -70,6 +83,56 @@ class Package(unittest.TestCase):
             result, archive = self.build('linux', extra=name)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(archive.exists())
+
+    def test_missing_speech_assets_are_rejected(self):
+        for platform in ('linux', 'windows', 'macos'):
+            for name in ('silero-vad-v6.2-F32.gguf', 'LICENSE.txt'):
+                with self.subTest(platform=platform, name=name):
+                    result, archive = self.build(
+                        platform, change_speech=lambda speech: (speech / name).unlink())
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+            result, archive = self.build(
+                platform, change_speech=lambda speech: shutil.rmtree(speech))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(archive.exists())
+
+    def test_extra_speech_files_or_directories_are_rejected(self):
+        for platform in ('linux', 'windows', 'macos'):
+            for name in ('recording.wav', 'granite-speech.gguf', '.private', 'extra'):
+                with self.subTest(platform=platform, name=name):
+                    def change(speech):
+                        if name == 'extra':
+                            (speech / name).mkdir()
+                        else:
+                            (speech / name).write_bytes(b'must not ship')
+                    result, archive = self.build(platform, change_speech=change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+
+    def test_linked_speech_payload_or_members_are_rejected(self):
+        for platform in ('linux', 'windows', 'macos'):
+            for name in (None, 'silero-vad-v6.2-F32.gguf', 'LICENSE.txt'):
+                with self.subTest(platform=platform, name=name):
+                    def change(speech):
+                        item = speech / name if name else speech
+                        target = speech.parent / ('linked-' + (name or 'speech'))
+                        item.rename(target)
+                        try:
+                            os.symlink(target, item, target_is_directory=name is None)
+                        except (OSError, NotImplementedError) as error:
+                            self.skipTest('Host cannot create test symlinks: ' + str(error))
+                    result, archive = self.build(platform, change_speech=change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+
+    def test_directory_in_place_of_speech_file_is_rejected(self):
+        def change(speech):
+            (speech / 'LICENSE.txt').unlink()
+            (speech / 'LICENSE.txt').mkdir()
+        result, archive = self.build('linux', change_speech=change)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(archive.exists())
 
 
 if __name__ == '__main__':

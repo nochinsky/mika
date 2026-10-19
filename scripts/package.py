@@ -49,6 +49,16 @@ with tempfile.TemporaryDirectory() as temporary:
            for item in (punctuation / 'licenses').iterdir()):
         raise SystemExit('Unexpected files in formatting notices')
     shutil.copytree(punctuation, root / 'bin' / 'punctuation')
+    # The CPU VAD is mandatory even in raw mode. Package only the fixed,
+    # build-verified asset and its notice, never ASR caches or private audio.
+    speech = args.stage / 'bin' / 'speech'
+    speech_required = {'silero-vad-v6.2-F32.gguf', 'LICENSE.txt'}
+    if speech.is_symlink() or not speech.is_dir():
+        raise SystemExit('Missing or linked installed speech payload')
+    if ({item.name for item in speech.iterdir()} != speech_required or
+            any(item.is_symlink() or not item.is_file() for item in speech.iterdir())):
+        raise SystemExit('Incomplete or unexpected files in speech payload')
+    shutil.copytree(speech, root / 'bin' / 'speech')
     for filename in ['LICENSE', 'README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md']:
         shutil.copy2(source / filename, root / filename)
     shutil.copytree(source / 'licenses', root / 'licenses')

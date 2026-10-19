@@ -189,10 +189,8 @@ done:
     free(model_path);
     if (mika_cancelled(NULL)) { result = 130; }
     if (result == 130) { fputs("Cancelled.\n", stderr); }
-    if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) {
-        fputs("No speech recognized.\n", stderr);
-        result = 3;
-    }
+    if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) { result = 3; }
+    if (result == 3) { fputs("No speech recognized.\n", stderr); }
     if (!result) {
         if (puts(text) == EOF || fflush(stdout) != 0) {
             fputs("mika: cannot write the transcript to stdout.\n", stderr);

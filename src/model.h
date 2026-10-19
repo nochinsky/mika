@@ -2,6 +2,7 @@
 #define MIKA_MODEL_H
 
 #include "platform.h"
+#include "verify.h"
 #include <stdint.h>
 
 #define MIKA_MODEL_FILE "granite-speech-5.0-470m-turboctc-Q4_K_M.gguf"
@@ -10,9 +11,6 @@
 #define MIKA_MODEL_BYTES UINT64_C(279114080)
 #define MIKA_MODEL_URL "https://huggingface.co/handy-computer/granite-speech-5.0-470m-turboctc-gguf/resolve/" MIKA_MODEL_REVISION "/" MIKA_MODEL_FILE
 
-enum { MIKA_MODEL_VALID = 0, MIKA_MODEL_INVALID = 1, MIKA_MODEL_IO_ERROR = 2 };
-
-int mika_model_verify(const char *path, uint64_t expected_bytes, const char *expected_sha256);
 /* HTTPS only; does not replace destination until the entire payload is verified. */
 int mika_model_download(const char *url, const char *destination, uint64_t expected_bytes,
                         const char *expected_sha256, MikaTerminal *terminal);

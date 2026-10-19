@@ -270,6 +270,11 @@ class Controls(unittest.TestCase):
             process.send(key)
             self.assertEqual(process.finish(), (130, b''))
 
+    def test_gate_rejection_default_never_prints_or_formats(self):
+        process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_GATE_REJECT='1')
+        self.assertEqual(process.finish(), (3, b''))
+        self.assertEqual(process.diagnostics, b'No speech recognized.\n')
+
     def test_no_speech_default_never_prints_or_formats(self):
         for value in ('', ' \t\n'):
             process = self.start(redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT=value)

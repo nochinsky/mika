@@ -63,12 +63,16 @@ int main(int argc, char **argv)
         result = mika_engine_run(engine, pcm, (size_t)frames, &text);
     }
     double inferred = mika_now();
+    MikaEngineTimings timings = mika_engine_timings(engine);
+    fprintf(stderr, "speech_gate_ms=%.3f asr_ms=%.3f speech_admitted=%d\n",
+            timings.speech_gate_ms, timings.inference_ms, timings.speech_admitted);
     char *raw = NULL, *formatted = NULL;
     if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) { result = 3; }
-    if (!result && !raw_mode && text) {
+    if (!result && !raw_mode && text && mika_punctuation_input_valid(text)) {
         raw = malloc(strlen(text) + 1);
-        if (!raw) { result = 1; }
-        else {
+        /* Match the CLI: copy-allocation failure keeps valid borrowed raw text,
+           rather than turning a recoverable formatting failure into ASR loss. */
+        if (raw) {
             strcpy(raw, text);
             mika_engine_close(engine);
             engine = NULL;

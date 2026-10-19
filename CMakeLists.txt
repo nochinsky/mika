@@ -106,7 +106,7 @@ mika_warnings(mika_audio)
 
 add_library(mika_engine STATIC src/engine.c)
 target_include_directories(mika_engine PUBLIC src)
-target_link_libraries(mika_engine PUBLIC transcribe mika_platform)
+target_link_libraries(mika_engine PUBLIC transcribe mika_platform mika_verify mika_assets)
 mika_warnings(mika_engine)
 
 add_executable(mika src/main.c)
@@ -117,6 +117,7 @@ if(APPLE)
         "LINKER:-sectcreate,__TEXT,__info_plist,${CMAKE_BINARY_DIR}/generated/macos-info.plist")
 endif()
 
+include(cmake/Speech.cmake)
 include(cmake/Formatting.cmake)
 
 install(TARGETS mika RUNTIME DESTINATION bin)
@@ -125,6 +126,7 @@ install(DIRECTORY docs/ DESTINATION share/doc/mika/docs)
 install(DIRECTORY licenses/ DESTINATION share/licenses/mika)
 
 if(BUILD_TESTING)
+    include(cmake/UnitTests.cmake)
     add_executable(mika-inference-test tests/inference.c)
     target_link_libraries(mika-inference-test PRIVATE mika_engine mika_miniaudio mika_platform)
     if(WIN32)
@@ -148,7 +150,7 @@ if(BUILD_TESTING)
     set_tests_properties(punctuation-unit PROPERTIES TIMEOUT 30)
 
     target_link_libraries(mika-inference-test PRIVATE mika_punctuation)
-    add_dependencies(mika-inference-test mika-punctuation-assets)
+    add_dependencies(mika-inference-test mika-punctuation-assets mika-speech-assets)
     add_executable(mika-punctuation-test tests/punctuation_probe.c)
     target_link_libraries(mika-punctuation-test PRIVATE mika_punctuation)
     if(WIN32)
@@ -188,7 +190,7 @@ if(BUILD_TESTING)
     mika_warnings(mika-audio-devices)
 
     if(Python3_Interpreter_FOUND)
-        foreach(test IN ITEMS spoken_evaluation benchmark_tools)
+        foreach(test IN ITEMS spoken_evaluation benchmark_tools speech_assets)
             add_test(NAME ${test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.py")
             set_tests_properties(${test} PROPERTIES TIMEOUT 30)
         endforeach()
@@ -243,6 +245,10 @@ if(BUILD_TESTING)
                 "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
                 "${transcribe_SOURCE_DIR}/samples/jfk.wav")
             set_tests_properties(real-model-punctuation PROPERTIES TIMEOUT 120)
+            add_test(NAME speech-admission COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/speech_audio.py"
+                "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
+                "${transcribe_SOURCE_DIR}/samples/jfk.wav")
+            set_tests_properties(speech-admission PROPERTIES TIMEOUT 180)
             add_test(NAME real-model-long COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/long_audio.py"
                 "$<TARGET_FILE:mika-inference-test>" "${MIKA_TEST_MODEL}"
                 "${transcribe_SOURCE_DIR}/samples/jfk.wav")

@@ -56,7 +56,7 @@ elseif(UNIX)
 endif()
 mika_warnings(mika-fullstop)
 add_library(mika_punctuation STATIC src/punctuation_backend.cpp)
-target_link_libraries(mika_punctuation PUBLIC mika_punctuation_guard mika_model ${CMAKE_DL_LIBS})
+target_link_libraries(mika_punctuation PUBLIC mika_punctuation_guard mika_verify mika_assets ${CMAKE_DL_LIBS})
 mika_warnings(mika_punctuation)
 if(MSVC)
     # Retain a defensive boundary even for an unexpectedly throwing module.

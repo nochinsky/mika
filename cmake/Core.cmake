@@ -26,8 +26,16 @@ if(WIN32)
 endif()
 mika_warnings(mika_platform)
 
+add_library(mika_assets STATIC "${MIKA_SOURCE_DIR}/src/assets.cpp")
+target_include_directories(mika_assets PUBLIC "${MIKA_SOURCE_DIR}/src")
+mika_warnings(mika_assets)
+
+# Offline asset validation has no downloader/network dependency.
+add_library(mika_verify STATIC "${MIKA_SOURCE_DIR}/src/verify.c")
+target_link_libraries(mika_verify PUBLIC mika_platform OpenSSL::Crypto)
+mika_warnings(mika_verify)
 add_library(mika_model STATIC "${MIKA_SOURCE_DIR}/src/model.c")
-target_link_libraries(mika_model PUBLIC mika_platform CURL::libcurl OpenSSL::Crypto)
+target_link_libraries(mika_model PUBLIC mika_verify CURL::libcurl)
 mika_warnings(mika_model)
 
 add_library(mika_pcm STATIC "${MIKA_SOURCE_DIR}/src/pcm.c")

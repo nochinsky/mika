@@ -55,6 +55,7 @@ int mika_engine_open(const char *path, MikaCancelled cancelled, void *userdata, 
 int mika_engine_run(MikaEngine *engine, const float *pcm, size_t frames, const char **text)
 {
     (void)pcm; (void)frames;
+    if (getenv("MIKA_FIXTURE_GATE_REJECT")) { *text = NULL; return 3; }
     if (getenv("MIKA_FIXTURE_SLOW_INFERENCE")) {
         double deadline = mika_now() + 5.0;
         while (mika_now() < deadline) {

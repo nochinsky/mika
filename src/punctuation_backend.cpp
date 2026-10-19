@@ -1,6 +1,7 @@
 #include "punctuation.h"
+#include "assets.h"
 extern "C" {
-#include "model.h"
+#include "verify.h"
 #include "platform.h"
 }
 #include "fullstop.h"
@@ -11,43 +12,16 @@ extern "C" {
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <vector>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #else
 #include <dlfcn.h>
-#include <unistd.h>
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
 #endif
 
 namespace {
 namespace fs = std::filesystem;
-
-fs::path executable_directory()
-{
-#ifdef _WIN32
-    std::vector<wchar_t> path(32768);
-    DWORD n = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-    if (!n || n >= path.size()) { throw std::runtime_error("executable path"); }
-    return fs::path(std::wstring(path.data(), n)).parent_path();
-#elif defined(__APPLE__)
-    uint32_t length = 0;
-    _NSGetExecutablePath(nullptr, &length);
-    if (!length || length > 1048576u) { throw std::runtime_error("executable path"); }
-    std::vector<char> path(length);
-    if (_NSGetExecutablePath(path.data(), &length) != 0) { throw std::runtime_error("executable path"); }
-    return fs::canonical(fs::path(path.data())).parent_path();
-#else
-    std::vector<char> path(32768);
-    ssize_t n = readlink("/proc/self/exe", path.data(), path.size());
-    if (n < 0 || static_cast<size_t>(n) >= path.size()) { throw std::runtime_error("executable path"); }
-    return fs::path(std::string(path.data(), static_cast<size_t>(n))).parent_path();
-#endif
-}
 
 class Library {
  public:
@@ -129,8 +103,11 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
             if (*out) { std::memcpy(*out, raw, raw_length + 1); }
             return *out ? 0 : fail(MIKA_PUNCTUATION_MEMORY);
         }
-        fs::path base = directory ? fs::absolute(fs::u8path(directory))
-                                  : executable_directory() / "punctuation";
+        stage = MIKA_PUNCTUATION_ASSETS;
+        std::unique_ptr<char, decltype(&std::free)> location(
+            directory ? nullptr : mika_asset_path("punctuation"), &std::free);
+        if (!directory && !location) { return fail(stage); }
+        fs::path base = directory ? fs::absolute(fs::u8path(directory)) : fs::u8path(location.get());
         std::string model = (base / "model.int8.onnx").u8string();
         std::string vocab = (base / "sp.model").u8string();
         stage = MIKA_PUNCTUATION_ASSETS;

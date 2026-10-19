@@ -287,6 +287,12 @@ class Controls(unittest.TestCase):
         process.send(b"\r")
         self.assertEqual(process.finish(), (1, b""))
 
+    def test_speech_gate_rejection_is_no_speech(self):
+        process = self.start(MIKA_FIXTURE_GATE_REJECT='1')
+        process.send(b'\r')
+        self.assertEqual(process.finish(), (3, b''))
+        self.assertIn(b'No speech recognized', process.messages)
+
     def test_silence_does_not_create_fake_text(self):
         process = self.start(MIKA_FIXTURE_SILENCE="1")
         process.send(b"\r")

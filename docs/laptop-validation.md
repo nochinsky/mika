@@ -103,10 +103,44 @@ Five-process median full formatter-stage cost was **135.8 ms / 121.1 MiB** for
 RSS is whole-process. Local formatter payload including notices: **82,021,715
 bytes**, compiler/build dependent. These are not incremental ASR memory costs.
 
+## Speech-admission follow-up — 2026-10-19
+
+Integration source `acdb693` plus provisioning fixes `4b08b9d` passed **21/21 full
+Linux CTest groups** and **15/15 model-free groups**. The owned runtime/policy also
+passed **15/15 ASan/UBSan groups** before the provisioning-only fixes. Independent
+read-only runtime and asset reviews accepted the changes after two network-bound
+fetcher issues and handled-publication rollback were fixed. This is not native
+Windows/Mac evidence for that integration HEAD.
+
+The actual CPU classifier rejected nine deterministic non-speech clips, including
+the original digital silence/two white-noise/100 Hz tone false-success cases.
+Five public-speech variants were admitted, including attenuation to 1% amplitude
+and a one-second extract surrounded by pauses. Missing, truncated and same-size
+wrong-hash VAD data failed closed in raw/default mode in a relocated probe.
+**Admission is not intelligibility:** ASR wording deteriorated with attenuation,
+including loss of “not” on a quieter public sample. No natural-mic accuracy claim
+follows from these tests.
+
+Three alternating fresh baseline/gated processes per mode on the **same 11-second
+public JFK file**, normal filesystem caches and this laptop/power policy:
+
+| Mode | Frozen pre-gate baseline median | Gated median | Baseline / gated peak RSS medians |
+| --- | ---: | ---: | ---: |
+| Raw | 706.0 ms | 716.2 ms | 328.7 / 333.9 MiB |
+| Default | 833.0 ms | 840.6 ms | 327.1 / 330.7 MiB |
+
+The gate itself took approximately **10.7–11.1 ms**, with a **1,241,056-byte**
+bundled model verified on launch. These small differences are a cost estimate,
+not a confidence interval or evidence of an ASR speedup. Full Granite hashing
+remains enabled. File timings include checksum/load/inference/formatting where
+applicable and teardown, not live Enter-to-output or launch-to-Listening.
+The comparison report is local/ignored at
+`build-readiness-reviews/public-gate-comparison.json`; no private speech was used.
+
 ## Still pending
 
 The 12 predeclared agent prompts and private collection/evaluation tools are ready,
-but **no guided human prompt session has been recorded yet**. Meaning-changing
+but **no completed guided human corpus has been reviewed here**. Meaning-changing
 errors, literal recognition, disfluency, multiple speakers/accents/noise conditions,
 and live spoken-prompt Enter-to-output timing still require explicit participation.
 Microphone startup tests and repeated public files must not be presented as that

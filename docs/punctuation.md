@@ -90,8 +90,9 @@ INT8 model, vocabulary, CPU runtime, source-built native module and notices are
 placed in `bin/punctuation/` and included in release archives. No separate asset
 host, model cache migration or new download manager was introduced.
 
-The speech GGUF remains a separately consented first-run download. Formatting
-weights remain inside the app and are replaced with application updates. The
+The Granite ASR GGUF remains a separately consented first-run download. Formatting
+and the small mandatory CPU VAD weights remain inside the app and are replaced
+with application updates. The
 executable needs **no Python**, and performs no conversion/download/upload during
 formatting. Never distribute a `MIKA_NATIVE_CPU=ON` speech build to unrelated CPUs;
 release bundles use runtime CPU dispatch.
@@ -121,15 +122,16 @@ Earlier prototype Windows CI measured a 72.5 MB payload and 265/514 ms for those
 inputs; different hardware/OS accounting make that unsuitable as an OS comparison.
 
 `scripts/benchmark_pipeline.py --probe ... --model ... --sample ... --output ...`
-now includes full Granite checksum verification, WAV decoding, speech load/inference,
-optional formatting and teardown. Local five-run medians were **457 / 581 ms** raw
+includes full Granite checksum verification, WAV decoding, speech load/admission/
+inference, optional formatting and teardown. Local **pre-admission-gate** five-run
+medians were **457 / 581 ms** raw
 versus formatted on public JFK, with **323 MiB peak for both** in that probe.
 Checksum plus speech-model load was **220 ms**. This is model-ready timing, not
 microphone initialization or actual launch-to-Listening latency. Do not add
 formatting-only RSS to ASR RSS or generalize this file probe to every workload.
 Older pipeline reports excluded the speech checksum and are not directly comparable.
 
-CI now tests the shipped configuration on both native platforms, raw/default
+Native CI covers Linux/Windows and experimental Apple Silicon macOS, raw/default
 installed and relocated inference, console controls, integrity/failure injection,
 exact-limit text and 300-second public speech, then uploads quality/resource reports.
 Earlier [native prototype run 39036249265](https://github.com/nochinsky/mika/actions/runs/39036249265)

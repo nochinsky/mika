@@ -9,13 +9,20 @@ and notices are retained under [`licenses/`](licenses/). Mika's original code is
 | transcribe.cpp | [b61b7f936e4e728f8999a8c3e98c7112e700410e](https://github.com/handy-computer/transcribe.cpp/tree/b61b7f936e4e728f8999a8c3e98c7112e700410e) | MIT |
 | ggml and bundled inference components | Vendored by the pinned transcribe.cpp archive | MIT and notices listed below |
 | miniaudio | [9634bedb5b5a2ca38c1ee7108a9358a4e233f14d](https://github.com/mackron/miniaudio/tree/9634bedb5b5a2ca38c1ee7108a9358a4e233f14d) | Public domain or MIT-0, at the recipient's choice |
+| Silero VAD v6.2 F32 GGUF | [GGUF revision a9b2d61c20ae4ddf3644edb34969e8185a485448](https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/tree/a9b2d61c20ae4ddf3644edb34969e8185a485448) | MIT |
 | Granite Speech 5.0 470M TurboCTC Q4_K_M | [GGUF revision 0cf5be9f4bcd479989e6a24d142094d34d552daa](https://huggingface.co/handy-computer/granite-speech-5.0-470m-turboctc-gguf/tree/0cf5be9f4bcd479989e6a24d142094d34d552daa) | Apache-2.0 |
 
 The Granite model is derived from
 [`ibm-granite/granite-speech-5.0-470m-turboctc`](https://huggingface.co/ibm-granite/granite-speech-5.0-470m-turboctc).
 Mika uses the standard Apache-2.0 weights, **not** the separately licensed
-non-commercial `-nc` weights. Model files are downloaded separately at runtime,
+non-commercial `-nc` weights. The Granite file is downloaded separately at runtime,
 with user consent; the exact expected payload checksum is in `src/model.h`.
+
+The required CPU speech-admission classifier is Silero VAD v6.2, converted to
+F32 GGUF by handy-computer without retraining/fine-tuning. Its 1,241,056-byte asset
+is pinned in `src/speech_asset.h`, bundled under `speech/`, and verified at build
+time and every engine launch. `speech/LICENSE.txt` carries immutable provenance,
+conversion notice and the complete MIT license; this is not Mika's MIT license.
 
 Included documents:
 
@@ -25,6 +32,7 @@ Included documents:
 - `licenses/miniaudio-LICENSE.txt`
 - `licenses/granite-speech-LICENSE.txt`
 - `licenses/granite-speech-NOTICE.txt`
+- `licenses/silero-vad-LICENSE.txt`
 
 The following dependencies are not vendored in this source repository. Release
 packages statically link curl, OpenSSL libcrypto, and zlib via the pinned vcpkg

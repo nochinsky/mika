@@ -38,11 +38,12 @@ Mika uses your system's default microphone. Recordings automatically finish at
 
 Punctuation/capitalization is automatic. Use `mika --raw` to skip it. Formatting
 never rewrites transcript words, but speech recognition and punctuation can still
-be wrong—this is quick dictation, not an editor.
+be wrong—this is quick dictation, not an editor. Review negations, numbers and
+technical names before using the result as an agent instruction.
 
-The first run asks before downloading the **279 MB** speech model. Formatting
-assets come with the app. After that, everything works offline. Your audio stays
-in memory and is never uploaded or saved.
+The first run asks before downloading the **279 MB** speech model. Formatting and
+speech-detection assets come with the app. After that, everything works offline.
+Your audio stays in memory and is never uploaded or saved.
 
 To save the transcript instead:
 
@@ -75,6 +76,7 @@ irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
 
 [Removal details & keeping the model](docs/usage.md#uninstalling).
 
+[Architecture & safety boundaries](docs/architecture.md) ·
 [Help & advanced installation](docs/usage.md) · [Build & contribute](CONTRIBUTING.md) ·
 [Releases](https://github.com/nochinsky/mika/releases)
 

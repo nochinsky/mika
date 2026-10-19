@@ -22,6 +22,11 @@ by default; `mika --raw` prints the unformatted ASR transcript instead. Formatti
 preserves words/order and obvious literals, but is not an editor and cannot fix
 misheard words. Unsupported text or ordinary formatting errors retain the raw text
 with a short stderr warning. See [formatting details](punctuation.md).
+A mandatory CPU speech classifier checks the whole recording before ASR, including
+with `--raw`. Zero detected speech returns exit 3 with no transcript. It does not
+trim audio or finish recording automatically when you pause. Background speech,
+music or an unusual noise can still fool a classifier; success is not evidence
+that Mika heard the intended words. Check important constraints before use.
 There are no partial transcripts, timestamps, translation, diarization, or history.
 Cancellation during synchronous loading/inference may wait for that operation to
 return; cancelled work never prints a partial transcript.
@@ -49,7 +54,9 @@ before and after moving into place. An update failure restores the previous app;
 if restoration itself fails, recovery files are retained rather than deleted.
 Concurrent installers are rejected. Close Mika before updating, especially on Windows.
 The separately cached speech model is never removed by application updates.
-Formatting data/runtime remain bundled with the app and are replaced with it.
+Formatting and speech-detection data/runtime remain bundled with the app and are
+replaced with it. Missing/damaged speech-detection data fails closed with exit 1;
+reinstall the app rather than bypassing the check.
 There is no background updater or automatic network check when you launch Mika.
 
 Advanced environment variables, identical on both installers:
@@ -61,8 +68,8 @@ Advanced environment variables, identical on both installers:
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive with an adjacent `.sha256` file. |
 
 Manual archives are on [GitHub Releases](https://github.com/nochinsky/mika/releases).
-Archives include the fixed formatting weights/runtime, but not the 279 MB speech
-model. Installers never open a microphone or separately fetch the speech model.
+Archives include fixed formatting weights/runtime and a 1.24 MB CPU speech
+classifier, but not the 279 MB Granite ASR model. Installers never open a microphone or separately fetch the speech model.
 You can inspect either installer before executing it. Release archives are not independently
 signed; adjacent checksums detect corruption, not a compromised publisher.
 No machine-wide PowerShell execution-policy change is made.
@@ -94,8 +101,8 @@ Both show what will be removed and ask once before making changes. Default/Enter
 cancels. Linux reads confirmation from the controlling terminal, not the piped
 script. Noninteractive use requires explicit unattended consent.
 
-Removal includes the **installer-managed application** (bundled formatter, runtime,
-docs/licenses), the fixed downloaded speech model and its `.part.*` files, and the
+Removal includes the **installer-managed application** (bundled formatter,
+speech classifier, runtime, docs/licenses), the fixed downloaded speech model and its `.part.*` files, and the
 Mika command/PATH setup. Linux removes only a symlink pointing to this installation,
 unchanged Mika blocks in supported shell profiles, and an unchanged Mika Fish file.
 Windows removes only the matching application `bin` entry from user/current-process
@@ -142,7 +149,11 @@ The fixed model is **Granite Speech 5.0 470M TurboCTC Q4_K_M**, the standard
 [`src/model.h`](../src/model.h). Model updates are deliberate source changes,
 not a background download of a moving model version.
 
-Every dictation launch verifies the speech model's size and checksum. Its initial download requires
+Every dictation launch verifies the ASR model's size and full checksum, and also
+the bundled Silero VAD's pinned size/SHA-256 ([metadata](../src/speech_asset.h)).
+Speech admission uses the native CPU library; no extra runtime Python, download,
+model cache or user setting is involved. Its separate MIT/provenance notice is
+included with the app. The Granite model's initial download requires
 consent, HTTPS/certificate validation, bounded transfers and verified atomic
 replacement. Failed transfers are discarded. A forcibly killed download can leave
 `.part.*` files; remove them only when no download is running. The model directory
@@ -165,11 +176,12 @@ unbounded buffer.
 | **0** | Transcript (formatted or safe raw fallback), help, or version | Requested text |
 | **1** | Failure | Empty during dictation |
 | **2** | Invalid arguments | Empty |
-| **3** | No speech recognized, including empty/whitespace-only output | Empty |
+| **3** | No detected speech or empty/whitespace-only ASR output | Empty |
 | **130** | Cancellation or declined model download | Empty |
 
 A formatting fallback is still a successful transcript, not an empty/error result.
-For an agent wrapper, check success before sending anything. For example:
+For an agent wrapper, check success before using any output. Exit 0 is not a
+confidence score or approval to execute a prompt unattended. For example:
 
 ```sh
 if prompt="$(mika)"; then

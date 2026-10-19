@@ -76,6 +76,30 @@ permission behavior on downloaded artifacts remain part of real-Mac acceptance;
 no script disables Gatekeeper, strips quarantine or changes OS security policy.
 Do not label this stable support until those checks have been performed.
 
+## Physical-Mac acceptance checklist — pending
+
+No physical Mac was available for this review. Before calling support stable:
+
+- [ ] On native Apple Silicon/macOS 14+, download the candidate artifact through
+  the normal browser path, verify its checksum/signature, and observe trust/
+  quarantine behavior **without** stripping quarantine or disabling Gatekeeper.
+- [ ] Fresh per-user install from that exact artifact; verify command/PATH and
+  first-run model consent (decline, then accept) without sudo or developer tools.
+- [ ] In the intended terminal app, test microphone permission deny, recovery and
+  allow. Check the actual default input and intelligible captured speech, not
+  merely the device list or advancing sample counter.
+- [ ] Dictate short natural prompts, pauses, quiet speech and intentional silence;
+  finish with Enter and review meaning/negations/numbers. Measure live
+  Enter-to-output separately from file inference.
+- [ ] Cancel during recording/loading/inference; confirm exit 130, empty stdout
+  and restored terminal. Test stdout redirection as well as the visible terminal.
+- [ ] Update/reinstall, forced repair, removal with/without keeping Granite, and
+  interrupted-operation recovery; verify unrelated files/profiles remain intact.
+
+Record OS/terminal/input/artifact identity and actual results. Developer ID signing
+and notarization are **not implemented**; decide the distribution policy explicitly
+rather than treating an ad-hoc CI signature as equivalent acceptance.
+
 ## Building and automated evidence
 
 Developer builds need Xcode Command Line Tools, CMake 3.24+, Python 3.12 with the

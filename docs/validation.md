@@ -18,7 +18,9 @@ cmake --build build-model-free --parallel 4
 ctest --test-dir build-model-free --output-on-failure
 ```
 
-Coverage: PCM/checksum/platform tests, guard/renderer tests, actual main/platform
+Coverage: PCM/checksum/platform and executable-relative UTF-8 asset-path tests,
+real engine policy with fake ML adapters (CPU gate, cleanup, cancellation,
+repeated-run reset and original PCM), guard/renderer tests, actual main/platform
 code with fake speech/audio, local HTTPS downloads, installer transactions,
 packaging/metadata, evaluation math and benchmark-tool consent/privacy checks.
 The CLI test's model-preparation path is real, but microphone/inference are fake.
@@ -57,8 +59,30 @@ must not be compared as if it were a rebooted system. This mode is unavailable o
 Windows. Metadata records CPU, governor, power-source status and load when available;
 background workloads, thermal limits and power policy still affect comparisons.
 
+The probe separately emits `speech_gate_ms`, `asr_ms` and `speech_admitted` on
+stderr. Rejected non-speech has no ASR compute/transcript; it still pays checksum
+and engine initialization costs. Speech admission is included in pipeline time.
+
 The existing `benchmark_pipeline.py` also accepts `--runs` and `--cache-mode` for
 one input. Default remains five fresh processes with normal filesystem caches.
+
+## Real speech-admission regression (opt-in verified model, no microphone)
+
+With `MIKA_TEST_MODEL` configured, full CTest includes `speech-admission`:
+
+```sh
+ctest --test-dir build -R 'engine-unit|assets-unit|speech-admission|speech_assets' --output-on-failure
+```
+
+It requires rejection of nine deterministic synthetic silence/noise/tone inputs,
+admission of five public-file speech variants (including attenuation and pauses),
+and fail-closed missing/truncated/same-size wrong-hash VAD assets in raw/default
+mode. Damage tests modify only a temporary relocated probe/payload, never the
+original build or installed model. Model-free policy tests mock the ML outputs;
+real-model tests exercise the actual classifier. Neither establishes behavior on
+all music, noise, background speech or quiet human microphones. Attenuated-speech
+**admission is not transcription accuracy**; quiet ASR can still drop negations.
+Keep new field recordings separate and consented; do not tune only to public fixtures.
 
 ## Actual launch-to-Listening (Linux only, opt-in microphone)
 

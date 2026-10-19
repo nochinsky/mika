@@ -11,9 +11,10 @@ configurable speech platform. Keep changes small and preserve stdout/exit behavi
 - **Python 3.12+ and the pinned conversion requirements for development/builds**.
   Python is never an installed-app dependency.
 
-Model preparation is intentionally unchanged: CMake fetches pinned original
-FullStop weights, reproduces and verifies INT8 conversion, and prepares a sibling
-`bin/punctuation/` payload. First builds download the 210 MB original weights,
+CMake fetches pinned original FullStop weights, reproduces and verifies INT8
+conversion, and prepares a sibling `bin/punctuation/` payload. It also verifies
+and bundles the fixed **1,241,056-byte Silero CPU VAD** under `bin/speech/`;
+no conversion or runtime download is needed for that classifier. First builds download the 210 MB original weights,
 CPU ONNX Runtime assets and SentencePiece/transcribe.cpp/miniaudio sources.
 Verified downloads are cached under the build directory. No conversion occurs in
 normal app use. Exact provenance/versions are in [docs/punctuation.md](docs/punctuation.md).
@@ -66,7 +67,9 @@ There is one app configuration: formatting by default, `--raw` at runtime. There
 is no experimental formatting switch or alternate model selector. Experimental
 macOS support is ARM64-only, with one static CPU speech backend and no GPU/Core ML
 execution; see [the native CI and hardware-testing limitations](docs/macos.md).
-Keep the `punctuation/` directory beside the executable.
+Keep both `punctuation/` and `speech/` beside the executable. Missing or damaged
+speech-detection data is a hard error, including with `--raw`. See the
+[module boundaries and safety contract](docs/architecture.md).
 
 ## Tests and measurements
 
@@ -96,7 +99,9 @@ ctest --test-dir build --output-on-failure
 ```
 
 Real-model tests run raw and default-formatted public JFK audio, including a
-300-second repetition/length regression. That is not natural dictation accuracy.
+300-second repetition/length regression. The admission regression checks synthetic
+non-speech, attenuated/brief public speech, and missing/truncated/wrong-hash
+bundled VAD data in both modes. That is not natural dictation accuracy.
 `MIKA_SANITIZERS=ON` in a separate build instruments owned code on GCC/Clang; use
 `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`. Third-party libraries
 are not themselves instrumented. Never replace missing hardware testing with a
@@ -114,7 +119,7 @@ ASR heard the intended words.
 ## Installation and releases
 
 `cmake --install build --prefix "$HOME/.local"` installs a source build and its
-formatting payload/docs/licenses; multi-config generators need `--config Release`.
+formatting/speech-detection payloads, docs and licenses; multi-config generators need `--config Release`.
 This is not an installer-managed app. Move a regular `~/.local/bin/mika` aside
 before switching to the release installer's symlink.
 
@@ -125,14 +130,15 @@ source build is **not** a standalone release just because dispatch is enabled.
 CI validates default/raw inference after real installation/relocation, console and
 installer transactions, integrity/fallback/cancellation, and public five-minute
 processing before a matching tag may publish. No private audio or test executables
-are packaged. Formatting weights are included; the speech GGUF is not.
+are packaged. Formatting and VAD weights are included; the **279 MB Granite ASR
+GGUF is not**.
 
 For a dependency/model update: pin source and artifact identities, preserve notices
 and modification provenance, reproduce the conversion hash, run metadata/safety
-checks and both native jobs, and inspect quality/resource changes. Update security
+checks and all three native platform jobs, and inspect quality/resource changes. Update security
 sensitive dependencies deliberately; do not automatically chase new speech models.
 
 For a release: update the CMake project version and `vcpkg.json` together, update
-release notes/docs, validate both native jobs, then push the matching `vX.Y.Z` tag.
+release notes/docs, validate all three native platform jobs, then push the matching `vX.Y.Z` tag.
 The generated version header also supplies the downloader user-agent. Do not rewrite
 published tags. Keep original Mika MIT code separate from model/dependency licenses.

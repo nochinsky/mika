@@ -75,6 +75,14 @@ def review_take(destination):
                                check=True, timeout=40)
 
 
+def display_prompt(case, index, total):
+    """Separate delivery advice from the only text the speaker should read."""
+    print(f"\n[{index}/{total}: {case['id']}]")
+    if case.get('speaker_note'):
+        print('Note (do not read aloud):', case['speaker_note'])
+    print('Read aloud:', case.get('read_aloud', case['reference']))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prompts', type=Path, default=Path(__file__).resolve().parents[1] / 'tests/spoken_prompt_cases.json')
@@ -117,7 +125,7 @@ def main():
             destination = root / case['audio']
             destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             while True:
-                print(f"\n[{index}/{len(cases)}: {case['id']}] {case.get('read_aloud', case['reference'])}")
+                display_prompt(case, index, len(cases))
                 input('Press Enter when ready to record (Ctrl+C stops the session): ')
                 capture(destination, args.seconds)
                 print('Saved locally:', destination)

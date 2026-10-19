@@ -1,4 +1,6 @@
 """Offline benchmark-tool tests; no model, microphone, or global cache changes."""
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import benchmark_common
 import benchmark_durations
+import record_spoken
 
 
 class BenchmarkTools(unittest.TestCase):
@@ -65,6 +68,26 @@ class BenchmarkTools(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn(b'--consent-save-audio is required', result.stderr)
             self.assertFalse(output.exists())
+
+    def test_speaker_advice_is_separate_from_spoken_text(self):
+        cases = json.loads((ROOT / 'tests/spoken_prompt_cases.json').read_text(encoding='utf-8'))['cases']
+        noted = [case for case in cases if case.get('speaker_note')]
+        self.assertEqual({case['id'] for case in noted}, {'path', 'identifier'})
+        for case in noted:
+            with self.subTest(case=case['id']):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    record_spoken.display_prompt(case, 1, len(cases))
+                lines = output.getvalue().splitlines()
+                self.assertIn('Note (do not read aloud): ' + case['speaker_note'], lines)
+                spoken = [line for line in lines if line.startswith('Read aloud: ')]
+                self.assertEqual(spoken, ['Read aloud: ' + case['read_aloud']])
+                self.assertNotIn(case['speaker_note'], spoken[0])
+        plain = io.StringIO()
+        with redirect_stdout(plain):
+            record_spoken.display_prompt({'id': 'plain', 'reference': 'Example words'}, 1, 1)
+        self.assertIn('Read aloud: Example words', plain.getvalue())
+        self.assertNotIn('Note (do not read aloud)', plain.getvalue())
 
     def test_guided_session_requires_explicit_save_consent(self):
         result = subprocess.run([sys.executable, ROOT / 'scripts/guided_validation.py'],

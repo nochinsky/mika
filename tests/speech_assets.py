@@ -212,7 +212,7 @@ def open_response(*args, **kwargs):
     return Response()
 assets.urllib.request.build_opener = lambda *args: SimpleNamespace(open=open_response)
 assets.main()
-''' % (str(ROOT / 'scripts/fetch_speech_assets.py'), str(marker), str(late_marker), operation))
+''' % (str(ROOT / 'scripts/fetch_speech_assets.py'), str(marker), str(late_marker), operation), encoding='utf-8')
                 processes = []
                 popen = subprocess.Popen
 

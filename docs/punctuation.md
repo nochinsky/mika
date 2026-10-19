@@ -136,6 +136,10 @@ Earlier [native prototype run 39036249265](https://github.com/nochinsky/mika/act
 reproduced the conversion hash and identical 90-example outputs on both platforms;
 that historical run alone is not production-packaging approval.
 
+A separate [Core Ultra 5 laptop validation](laptop-validation.md) reproduces these
+quality scores and reports actual microphone startup plus 10/60/300-second file
+pipeline latency/memory. It does not claim natural spoken-prompt accuracy.
+
 ## Provenance and licenses
 
 Exact URLs/hashes: [fetcher](../scripts/fetch_punctuation.py). FullStop English

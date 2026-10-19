@@ -32,6 +32,20 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/uninstall_windows.ps1
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
+  model-free:
+    name: Model-free regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install native test prerequisites (no ML packages or weights)
+        run: sudo apt-get update && sudo apt-get install -y cmake libcurl4-openssl-dev libssl-dev
+      - name: Build and test shared core and CLI fixtures
+        run: |
+          cmake -S tests/model-free -B build-model-free -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-model-free --parallel 2
+          ctest --test-dir build-model-free --output-on-failure
+
   package:
     name: ${{ matrix.platform }} x86-64
     strategy:
@@ -185,7 +199,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [uninstallers, package]
+    needs: [uninstallers, model-free, package]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

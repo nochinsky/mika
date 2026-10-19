@@ -67,6 +67,13 @@ build. Keep the `punctuation/` directory beside the executable.
 
 ## Tests and measurements
 
+For quick checks without model downloads/conversion or Python ML packages, use
+[the separate model-free test entry point](docs/validation.md#fast-model-free-checks).
+The same guide covers laptop duration/resource measurements, real microphone
+startup timing, and an explicitly consented human spoken-prompt evaluation workflow.
+See the [Core Ultra 5 laptop validation snapshot](docs/laptop-validation.md) for
+measured results and the remaining natural-speech evidence gap.
+
 ```sh
 ctest --test-dir build --output-on-failure
 ```

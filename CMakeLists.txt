@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(mika VERSION 0.3.0 LANGUAGES C CXX)
+project(mika VERSION 0.3.1 LANGUAGES C CXX)
 configure_file(src/mika_version.h.in generated/mika_version.h @ONLY)
 if(APPLE)
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" OR

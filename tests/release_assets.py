@@ -43,6 +43,11 @@ class ReleaseAssets(unittest.TestCase):
     def test_complete_three_platform_release(self):
         self.assertEqual(set(release.validate(self.root, 'v0.3.0')), set(release.ARCHIVES))
 
+    def test_native_windows_crlf_metadata_is_accepted(self):
+        for name in release.ARCHIVES:
+            self.archive(name, 'v0.3.0\r\n')
+        self.assertEqual(set(release.validate(self.root, 'v0.3.0')), set(release.ARCHIVES))
+
     def test_missing_mac_or_extra_payload_blocks_publication(self):
         for name in ('mika-macos-arm64.tar.gz', 'mika-macos-arm64.tar.gz.sha256'):
             path = self.root / name
@@ -68,7 +73,8 @@ class ReleaseAssets(unittest.TestCase):
 
     def test_mixed_versions_duplicate_and_oversize_version_rejected(self):
         for name in release.ARCHIVES:
-            for version in ('v0.2.0\n', 'v0.3.0', 'x' * 129):
+            for version in ('v0.2.0\n', 'v0.2.0\r\n', 'v0.3.0', 'v0.3.0\r',
+                            'v0.3.0\r\n\r\n', 'v0.3.0 \r\n', 'x' * 129):
                 self.archive(name, version)
                 with self.assertRaises(ValueError):
                     release.validate(self.root, 'v0.3.0')

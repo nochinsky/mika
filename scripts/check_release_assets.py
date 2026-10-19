@@ -45,7 +45,9 @@ def validate(directory, version):
                     raise ValueError('Missing/ambiguous release VERSION')
                 with bundle.extractfile(members[0]) as source:
                     embedded = source.read(129)
-        if embedded != (version + '\n').encode('ascii'):
+        # Older Windows packages use native CRLF. Accept exactly one LF/CRLF,
+        # not arbitrary whitespace, missing newlines or a different tag.
+        if embedded not in (version.encode('ascii') + b'\n', version.encode('ascii') + b'\r\n'):
             raise ValueError('Archive VERSION does not match release tag: ' + name)
         identities[name] = digest.hexdigest()
     return identities

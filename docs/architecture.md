@@ -3,7 +3,7 @@
 Mika is a one-shot English dictation CLI, not a configurable speech platform.
 Its contract is **run → speak → Enter → one transcript on stdout → exit**.
 There is no daemon, agent submission, clipboard action or saved-audio runtime mode.
-v0.3.0 distributes these safeguards on Linux/Windows and includes an experimental
+v0.3.1 distributes these safeguards on Linux/Windows and includes an experimental
 Apple Silicon Mac download. An installed release changes only through explicit
 installation/update. Mac distribution is public; physical-Mac acceptance and
 Developer ID signing/notarization are not claimed.

@@ -29,7 +29,7 @@ Install as your normal user—no sudo/admin, compiler, Homebrew, or Python neede
 Prebuilt downloads: **x86-64 Linux (glibc 2.35+)**, **Windows 10/11 x64**, and
 **Apple Silicon ARM64 macOS 14+**. Restart your terminal if `mika` is not found.
 
-Mac downloads are included starting with **v0.3.0**, but support is experimental:
+Mac downloads are included starting with **v0.3.1**, but support is experimental:
 native automated tests pass; physical microphone/permission/Gatekeeper checks
 remain pending. Builds are ad-hoc signed, **not notarized**. Intel/Rosetta Macs are
 not supported. See [Mac setup and limitations](docs/macos.md).

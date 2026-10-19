@@ -66,7 +66,7 @@ Advanced environment variables, shared by the Linux, Windows and Mac installers:
 
 | Variable | Purpose |
 | --- | --- |
-| `MIKA_VERSION` | Explicit release tag, e.g. `v0.3.0`, instead of latest. Can deliberately select an older version. |
+| `MIKA_VERSION` | Explicit release tag, e.g. `v0.3.1`, instead of latest. Can deliberately select an older version. |
 | `MIKA_REINSTALL=1` | Force a clean reinstall even when the release is current. |
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive with an adjacent `.sha256` file. |
 

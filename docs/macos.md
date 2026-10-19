@@ -14,7 +14,7 @@ the pinned speech decoder; it is not a Metal/Core ML inference backend.
 
 ## Install and update
 
-**v0.3.0 and later include a public Mac download** alongside Linux and Windows:
+**v0.3.1 and later include a public Mac download** alongside Linux and Windows:
 [`mika-macos-arm64.tar.gz` and its checksum](https://github.com/nochinsky/mika/releases/latest).
 Mac support remains **experimental**, not hardware-certified stable support.
 Native hosted ARM64 tests pass, but the physical-device checklist below is pending.
@@ -33,7 +33,7 @@ microphone permission; see the limitations below.
 For an explicit version instead of latest:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | MIKA_VERSION=v0.3.0 bash
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | MIKA_VERSION=v0.3.1 bash
 ```
 
 For manual/offline app installation, download both archive and adjacent `.sha256`

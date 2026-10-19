@@ -3,6 +3,8 @@ project(mika_model_free LANGUAGES C CXX)
 # Separate developer entry point, not an alternate application configuration.
 # No FetchContent, microphone, model conversion, or external Python packages.
 get_filename_component(MIKA_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+# A release-version edit must also regenerate an existing model-free build.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MIKA_ROOT}/CMakeLists.txt")
 file(STRINGS "${MIKA_ROOT}/CMakeLists.txt" version_line REGEX "^project\\(mika VERSION ")
 string(REGEX REPLACE ".*VERSION ([^ ]+).*" "\\1" PROJECT_VERSION "${version_line}")
 configure_file("${MIKA_ROOT}/src/mika_version.h.in" generated/mika_version.h @ONLY)

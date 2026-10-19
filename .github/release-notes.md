@@ -1,4 +1,4 @@
-## Mika v0.3.0 — Apple Silicon downloads and safer dictation
+## Mika v0.3.1 — Apple Silicon downloads and safer dictation
 
 Run `mika`, speak, press Enter, get text, exit. CPU-only, offline after the consented
 first Granite download; no account, cloud cleanup, daemon or end-user Python.
@@ -22,8 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos
 ```
 
 `MIKA_KEEP_MODEL=1` keeps downloaded Granite weights during removal.
-`MIKA_REINSTALL=1` forces app repair. `MIKA_VERSION=v0.3.0` pins this release.
-See the [Mac guide](https://github.com/nochinsky/mika/blob/v0.3.0/docs/macos.md)
+`MIKA_REINSTALL=1` forces app repair. `MIKA_VERSION=v0.3.1` pins this release.
+See the [Mac guide](https://github.com/nochinsky/mika/blob/v0.3.1/docs/macos.md)
 for paths, permissions, manual archives and recovery.
 
 **Experimental means:** native hosted ARM64 CPU builds, public-file inference,
@@ -46,6 +46,10 @@ stable Mac certification; please report real-device results with OS/terminal/inp
   raw text with a warning. This is not a semantic parser or an ASR correction.
 - Safe per-user Linux/Windows/Mac removal, ownership checks, explicit keep-model
   support and recovery preservation. Updates keep the separate Granite cache.
+- Cross-platform release metadata: archives now write identical LF `VERSION`
+  files, while publication accepts exact-tag LF or Windows CRLF metadata. The
+  attempted v0.3.0 publication stopped at this overly strict check; no partial
+  release was made public and the original tag was not rewritten.
 - Shared executable-relative asset paths/offline verification, expanded native and
   model-free tests, five-minute regressions, and private opt-in developer validation
   tools. The installed application still never saves audio.

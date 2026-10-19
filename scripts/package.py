@@ -73,7 +73,8 @@ with tempfile.TemporaryDirectory() as temporary:
                     target = root / 'licenses' / 'dependencies' / dependency.name
                     target.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(notice, target / name)
-    (root / 'VERSION').write_text(args.version + '\n')
+    # Keep release metadata byte-identical across Windows and POSIX hosts.
+    (root / 'VERSION').write_bytes((args.version + '\n').encode('ascii'))
     if args.platform != 'windows':
         archive = args.output / ('mika-macos-arm64.tar.gz' if args.platform == 'macos' else 'mika-linux-x86_64.tar.gz')
         with tarfile.open(archive, 'w:gz') as bundle:

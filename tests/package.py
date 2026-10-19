@@ -58,9 +58,12 @@ class Package(unittest.TestCase):
             if platform != 'windows':
                 with tarfile.open(archive) as bundle:
                     names = bundle.getnames()
+                    version = bundle.extractfile('mika/VERSION').read()
             else:
                 with zipfile.ZipFile(archive) as bundle:
                     names = bundle.namelist()
+                    version = bundle.read('mika/VERSION')
+            self.assertEqual(version, b'vtest\n')
             self.assertIn('mika/bin/punctuation/model.int8.onnx', names)
             self.assertIn('mika/bin/punctuation/licenses/NOTICE.txt', names)
             self.assertIn('mika/bin/speech/LICENSE.txt', names)

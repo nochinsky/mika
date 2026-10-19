@@ -5,6 +5,7 @@ find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter)
 set(speech_stage "${CMAKE_BINARY_DIR}/_deps/speech")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/fetch_speech_assets.py"
     --stage "${speech_stage}"
+    TIMEOUT 130
     COMMAND_ERROR_IS_FATAL ANY)
 add_custom_target(mika-speech-assets ALL
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "$<TARGET_FILE_DIR:mika>/speech"

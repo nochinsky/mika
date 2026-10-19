@@ -4,11 +4,15 @@ import importlib.util
 import io
 from pathlib import Path
 import re
+import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import urllib.request
+import urllib.response
 
+REAL_BUILD_OPENER = urllib.request.build_opener
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('fetch_speech_assets', ROOT / 'scripts/fetch_speech_assets.py')
 assets = importlib.util.module_from_spec(SPEC)
@@ -115,13 +119,119 @@ class SpeechAssets(unittest.TestCase):
                 assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
         self.assertEqual(list(self.cache.iterdir()), [])
 
+    def redirect_opener(self, replies):
+        # Exercise urllib's real HTTPErrorProcessor/redirect dispatch, replacing
+        # only the transport. Reading even one redirect-body byte is a failure.
+        bodies = []
+        urls = []
+
+        class RedirectBody(io.BytesIO):
+            def read(self, *args):
+                raise AssertionError('Redirect body must not be drained')
+
+        class OfflineHTTPS(urllib.request.BaseHandler):
+            handler_order = 100
+
+            def https_open(self, request):
+                urls.append(request.full_url)
+                code, location = replies[min(len(urls) - 1, len(replies) - 1)]
+                body = RedirectBody(b'x' * (assets.MODEL_BYTES + 1)) if location else Response(DATA)
+                bodies.append(body)
+                headers = {'Location': location} if location else {}
+                response = urllib.response.addinfourl(body, headers, request.full_url, code)
+                response.msg = 'offline fixture'
+                return response
+
+        opener = REAL_BUILD_OPENER(assets.NoRedirect(), OfflineHTTPS())
+        self.network.side_effect = None
+        self.network.return_value = opener
+        return bodies, urls
+
+    def test_https_redirect_bodies_are_closed_without_reading(self):
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                self.destination.unlink(missing_ok=True)
+                bodies, urls = self.redirect_opener([(code, '/next'), (200, None)])
+                assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
+                self.assertEqual(urls, [URL, 'https://example.invalid/next'])
+                self.assertTrue(all(body.closed for body in bodies))
+                self.assertEqual(self.destination.read_bytes(), DATA)
+
     def test_non_https_urls_and_redirects_are_rejected(self):
         with self.assertRaises(ValueError):
             assets.fetch(self.cache, assets.MODEL_FILE, ('http://example.invalid/model', len(DATA), DIGEST))
         self.network.assert_not_called()
-        with self.assertRaises(ValueError):
-            assets.HTTPSOnly().redirect_request(urllib.request.Request(URL), None, 302,
-                                                'Found', {}, 'http://example.invalid/model')
+        bodies, urls = self.redirect_opener([(302, 'http://example.invalid/model')])
+        with self.assertRaisesRegex(ValueError, 'HTTPS required'):
+            assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
+        self.assertEqual(urls, [URL])
+        self.assertTrue(bodies[0].closed)
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+    def test_redirect_hops_are_bounded(self):
+        bodies, urls = self.redirect_opener([(302, '/loop')])
+        with self.assertRaisesRegex(ValueError, 'Too many'):
+            assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
+        self.assertEqual(len(urls), assets.MAX_REDIRECTS + 1)
+        self.assertTrue(all(body.closed for body in bodies))
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+    def test_cli_uses_bounded_preparation(self):
+        with patch.object(assets.sys, 'argv', ['fetch_speech_assets.py', '--stage', str(self.stage)]), \
+                patch.object(assets, 'prepare_bounded') as bounded, \
+                patch.object(assets, 'prepare', side_effect=AssertionError('Must run in worker')):
+            assets.main()
+        bounded.assert_called_once_with(self.stage)
+
+    def test_standalone_timeout_kills_and_reaps_blocked_network_work(self):
+        for operation in ('open', 'read'):
+            with self.subTest(operation=operation):
+                marker = self.stage / (operation + '-entered')
+                late_marker = self.stage / (operation + '-continued')
+                worker = self.stage / 'offline_worker.py'
+                worker.write_text('''import importlib.util
+import io
+from pathlib import Path
+import time
+from types import SimpleNamespace
+spec = importlib.util.spec_from_file_location('assets', %r)
+assets = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(assets)
+def block():
+    Path(%r).write_text('entered')
+    time.sleep(60)
+    Path(%r).write_text('must not continue')
+class Response(io.BytesIO):
+    status = 200
+    def read(self, size=-1):
+        block()
+        return b''
+def open_response(*args, **kwargs):
+    if %r == 'open':
+        block()
+    return Response()
+assets.urllib.request.build_opener = lambda *args: SimpleNamespace(open=open_response)
+assets.main()
+''' % (str(ROOT / 'scripts/fetch_speech_assets.py'), str(marker), str(late_marker), operation))
+                processes = []
+                popen = subprocess.Popen
+
+                def start_worker(*args, **kwargs):
+                    process = popen(*args, **kwargs)
+                    processes.append(process)
+                    return process
+
+                started = time.monotonic()
+                with patch.object(assets, '__file__', str(worker)), \
+                        patch.object(assets.subprocess, 'Popen', side_effect=start_worker):
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        assets.prepare_bounded(self.stage, timeout=2)
+                self.assertLess(time.monotonic() - started, 7)
+                self.assertTrue(marker.exists(), 'Worker must reach the blocking operation')
+                self.assertFalse(late_marker.exists())
+                self.assertEqual(len(processes), 1)
+                self.assertIsNotNone(processes[0].returncode, 'Timed-out worker must be reaped')
+                self.assertFalse(self.destination.exists())
 
     def test_symlinked_cache_is_replaced_not_followed(self):
         target = self.stage / 'outside.gguf'
@@ -147,6 +257,49 @@ class SpeechAssets(unittest.TestCase):
         self.assertEqual({item.name for item in payload.iterdir()}, {assets.MODEL_FILE, 'LICENSE.txt'})
         self.assertEqual((payload / assets.MODEL_FILE).read_bytes(), DATA)
         self.assertEqual((payload / 'LICENSE.txt').read_bytes(), assets.LICENSE.read_bytes())
+        self.network.assert_not_called()
+
+    def test_publish_rename_failure_restores_previous_payload(self):
+        self.destination.write_bytes(DATA)
+        payload = self.stage / 'payload'
+        payload.mkdir()
+        (payload / 'old-marker').write_bytes(b'old')
+        rename = Path.rename
+
+        def fail_publication(source, destination):
+            if source.name == 'payload' and source.parent != self.stage:
+                self.assertTrue((source.parent / 'previous-payload' / 'old-marker').is_file())
+                raise OSError('injected publication failure')
+            return rename(source, destination)
+
+        with patch.multiple(assets, MODEL_BYTES=len(DATA), MODEL_SHA256=DIGEST), \
+                patch.object(Path, 'rename', autospec=True, side_effect=fail_publication):
+            with self.assertRaisesRegex(OSError, 'injected publication failure'):
+                assets.prepare(self.stage)
+        self.assertEqual({item.name for item in payload.iterdir()}, {'old-marker'})
+        self.assertEqual((payload / 'old-marker').read_bytes(), b'old')
+        self.assertEqual({item.name for item in self.stage.iterdir()}, {'downloads', 'payload'})
+        self.network.assert_not_called()
+
+    def test_failed_rollback_retains_previous_payload_backup(self):
+        self.destination.write_bytes(DATA)
+        payload = self.stage / 'payload'
+        payload.mkdir()
+        (payload / 'old-marker').write_bytes(b'old')
+        rename = Path.rename
+
+        def fail_publication_and_rollback(source, destination):
+            if source.parent != self.stage:
+                raise OSError('injected rename failure: ' + str(source))
+            return rename(source, destination)
+
+        with patch.multiple(assets, MODEL_BYTES=len(DATA), MODEL_SHA256=DIGEST), \
+                patch.object(Path, 'rename', autospec=True, side_effect=fail_publication_and_rollback):
+            with self.assertRaisesRegex(OSError, 'previous-payload'):
+                assets.prepare(self.stage)
+        backups = list(self.stage.glob('payload-*/previous-payload'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / 'old-marker').read_bytes(), b'old')
         self.network.assert_not_called()
 
     def test_failed_preparation_does_not_publish_or_remove_old_payload(self):

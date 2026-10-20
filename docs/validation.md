@@ -20,9 +20,10 @@ This shares the actual core targets and tests PCM, hashes/paths, engine policy
 with fake ML, cleanup/cancellation, original PCM preservation, CLI fixtures,
 formatting guards/diagnostic escaping, local HTTPS, installer/package transactions
 and evaluation tools. It does not exercise real inference or desktop permissions.
-For ASan/UBSan, use a separate build with `-DMIKA_SANITIZERS=ON` and
+The model-free CI job also builds the owned core with Clang ASan/UBSan. Locally,
+use a separate build with `-DMIKA_SANITIZERS=ON` and
 `ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`. Third-party code is not
-itself instrumented.
+itself instrumented. These checks do not establish absence of all defects.
 
 ## Native and public-file tests
 
@@ -62,7 +63,8 @@ python3 scripts/benchmark_durations.py --probe build/bin/mika-inference-test \
 Fresh raw/default processes receive exact-length **repeated public audio**. Timing
 includes checksum, decoding, model loading, admission, ASR, optional formatting and
 teardown—not terminal startup, microphone opening or live Enter-to-output. Peak RSS
-is whole-process, not incremental formatter memory. No private recordings are read
+is whole-process, not incremental formatter memory; both probes normalize native
+Linux/Mac/Windows counters to KiB. No private recordings are read
 or hypotheses retained in reports. Long runs can consume substantial resources.
 
 `warm` means ordinary filesystem caches, not guaranteed prewarming. POSIX `evict`

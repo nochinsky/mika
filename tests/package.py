@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Package(unittest.TestCase):
-    def build(self, platform, extra=None, missing=None, change_speech=None):
+    def build(self, platform, extra=None, missing=None, change_speech=None, change_punctuation=None):
         temporary = tempfile.TemporaryDirectory(prefix='Mika package ü ')
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -44,6 +44,8 @@ class Package(unittest.TestCase):
         (speech / 'LICENSE.txt').write_text('test Silero notice')
         if change_speech:
             change_speech(speech)
+        if change_punctuation:
+            change_punctuation(payload)
         result = subprocess.run([sys.executable, ROOT / 'scripts/package.py', '--stage', stage,
                                  '--output', root / 'dist', '--platform', platform, '--version', 'vtest'],
                                 capture_output=True, timeout=30)
@@ -86,6 +88,32 @@ class Package(unittest.TestCase):
             result, archive = self.build('linux', extra=name)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(archive.exists())
+
+    def test_linked_formatter_payload_members_and_notices_are_rejected(self):
+        for platform in ('linux', 'windows', 'macos'):
+            for name in (None, 'model.int8.onnx', 'sp.model', 'licenses', 'licenses/NOTICE.txt'):
+                with self.subTest(platform=platform, name=name):
+                    def change(payload):
+                        item = payload / name if name else payload
+                        target = payload.parent / ('linked-' + (name or 'payload').replace('/', '-'))
+                        item.rename(target)
+                        try:
+                            os.symlink(target, item, target_is_directory=target.is_dir())
+                        except (OSError, NotImplementedError) as error:
+                            self.skipTest('Host cannot create test symlinks: ' + str(error))
+                    result, archive = self.build(platform, change_punctuation=change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+
+    def test_unexpected_formatter_special_entries_are_rejected(self):
+        def change(payload):
+            try:
+                (payload / 'unexpected').symlink_to(payload / 'missing')
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(str(error))
+        result, archive = self.build('linux', change_punctuation=change)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(archive.exists())
 
     def test_missing_speech_assets_are_rejected(self):
         for platform in ('linux', 'windows', 'macos'):

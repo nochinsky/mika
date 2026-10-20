@@ -150,8 +150,11 @@ Developer recording tools require separate explicit consent.
 | **3** | No detected speech or empty recognition | Empty |
 | **130** | Cancellation or declined model download | Empty |
 
-A formatting fallback remains success. Check the exit status, not just output
-bytes: an output-device failure can occur after writing begins. For example:
+A formatting fallback remains success. In current source (not v0.3.1), detected
+terminal read failures return 1 rather than cancellation, and broken pipes do not
+bypass terminal cleanup. Failed transcript writes return 1. Check the exit status,
+not just output bytes: an output-device failure can occur after writing begins.
+For example:
 
 ```sh
 if text="$(mika)"; then

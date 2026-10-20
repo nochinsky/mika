@@ -6,24 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#ifdef _WIN32
-#include <windows.h>
-#include <psapi.h>
-#else
-#include <sys/resource.h>
-#endif
-
-static uint64_t peak_rss_kib(void)
-{
-#ifdef _WIN32
-    PROCESS_MEMORY_COUNTERS memory;
-    if (!GetProcessMemoryInfo(GetCurrentProcess(), &memory, sizeof(memory))) { return 0; }
-    return (uint64_t)(memory.PeakWorkingSetSize / 1024u);
-#else
-    struct rusage usage;
-    return getrusage(RUSAGE_SELF, &usage) == 0 ? (uint64_t)usage.ru_maxrss : 0;
-#endif
-}
+#include "peak_rss.h"
 
 struct Cancel { unsigned calls, at; };
 static int cancelled(void *userdata)

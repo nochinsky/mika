@@ -300,7 +300,11 @@ int mika_platform_init(void)
     memset(&action, 0, sizeof(action));
     action.sa_handler = interrupt_handler;
     sigemptyset(&action.sa_mask);
-    return sigaction(SIGINT, &action, NULL) || sigaction(SIGTERM, &action, NULL) ? -1 : 0;
+    if (sigaction(SIGINT, &action, NULL) || sigaction(SIGTERM, &action, NULL)) { return -1; }
+    /* A closed output pipe must become EPIPE, not kill us with a raw terminal.
+       This also protects diagnostics and HTTPS writes before normal cleanup. */
+    action.sa_handler = SIG_IGN;
+    return sigaction(SIGPIPE, &action, NULL);
 }
 
 int mika_cancelled(void *unused) { (void)unused; return interrupted != 0; }

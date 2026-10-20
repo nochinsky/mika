@@ -32,19 +32,58 @@ static void help(void)
     if (directory) { printf("Model directory: %s\n", directory); free(directory); }
 }
 
-struct Cancellation { MikaTerminal *terminal; int requested; };
+/* Preserve why work stopped: terminal failure is not user cancellation. */
+struct Cancellation { MikaTerminal *terminal; int result; };
 
 static int cancel_requested(void *userdata)
 {
     struct Cancellation *cancel = userdata;
-    if (mika_cancelled(NULL)) { cancel->requested = 1; }
+    if (mika_cancelled(NULL)) { cancel->result = 130; }
     /* Also consume keys queued while loading or doing synchronous inference. */
-    for (unsigned i = 0; i < 128 && !cancel->requested; ++i) {
+    for (unsigned i = 0; i < 128 && !cancel->result; ++i) {
         int key = mika_terminal_key(cancel->terminal, 0);
         if (key == MIKA_KEY_TIMEOUT) { break; }
-        if (key == 27 || key == 3 || key == MIKA_KEY_ERROR) { cancel->requested = 1; }
+        if (key == 27 || key == 3) { cancel->result = 130; }
+        if (key == MIKA_KEY_ERROR) { cancel->result = 1; }
     }
-    return cancel->requested;
+    return cancel->result != 0;
+}
+
+/* Capture is already running. The caller stops it before consuming final PCM. */
+static int record_until_finished(MikaAudio *audio, struct Cancellation *cancel, int *limit_reached)
+{
+    *limit_reached = 0;
+    double last_audio = mika_now();
+    size_t previous_frames = 0;
+    unsigned previous_second = UINT32_MAX;
+    for (;;) {
+        if (mika_cancelled(NULL)) { return 130; }
+        if (mika_audio_failed(audio)) {
+            mika_status_clear();
+            fputs("mika: microphone capture stopped unexpectedly.\n", stderr);
+            return 1;
+        }
+        size_t frames = mika_audio_frames(audio);
+        unsigned seconds = (unsigned)(frames / MIKA_SAMPLE_RATE);
+        if (seconds != previous_second) {
+            char status[96];
+            snprintf(status, sizeof(status), "Listening %02u:%02u / %02u:%02u   Enter: finish | Esc: cancel",
+                     seconds / 60, seconds % 60, MIKA_MAX_SECONDS / 60u, MIKA_MAX_SECONDS % 60u);
+            mika_status_show(status);
+            previous_second = seconds;
+        }
+        if (frames != previous_frames) { last_audio = mika_now(); previous_frames = frames; }
+        if (mika_now() - last_audio > 5.0) {
+            mika_status_clear();
+            fputs("mika: no audio is arriving from the microphone. Check your system input.\n", stderr);
+            return 1;
+        }
+        if (frames >= MIKA_MAX_FRAMES) { *limit_reached = 1; return 0; }
+        int key = mika_terminal_key(cancel->terminal, 100);
+        if (key == '\n') { return 0; }
+        if (key == 27 || key == 3) { return 130; }
+        if (key == MIKA_KEY_ERROR) { cancel->result = 1; return 1; }
+    }
 }
 
 int main(int argc, char **argv)
@@ -85,59 +124,18 @@ int main(int argc, char **argv)
     mika_status_show("Starting...");
     result = mika_model_ensure(terminal, &model_path);
     if (result) { goto done; }
-    if (cancel_requested(&cancel)) { result = 130; goto done; }
+    if (cancel_requested(&cancel)) { result = cancel.result; goto done; }
     mika_status_show("Starting...");
     result = mika_engine_open(model_path, cancel_requested, &cancel, &engine);
     if (result) { goto done; }
-    if (cancel_requested(&cancel)) { result = 130; goto done; }
+    if (cancel_requested(&cancel)) { result = cancel.result; goto done; }
     result = mika_audio_start(&audio);
     if (result) { goto done; }
-    if (cancel_requested(&cancel)) { result = 130; goto done; }
-    double last_audio = mika_now();
-    size_t previous_frames = 0;
-    unsigned previous_second = UINT32_MAX;
-    for (;;) {
-        if (mika_cancelled(NULL)) { result = 130; break; }
-        if (mika_audio_failed(audio)) {
-            mika_status_clear();
-            fputs("mika: microphone capture stopped unexpectedly.\n", stderr);
-            result = 1;
-            break;
-        }
-        size_t frames = mika_audio_frames(audio);
-        unsigned seconds = (unsigned)(frames / MIKA_SAMPLE_RATE);
-        if (seconds != previous_second) {
-            char status[96];
-            snprintf(status, sizeof(status), "Listening %02u:%02u / %02u:%02u   Enter: finish | Esc: cancel",
-                     seconds / 60, seconds % 60, MIKA_MAX_SECONDS / 60u, MIKA_MAX_SECONDS % 60u);
-            mika_status_show(status);
-            previous_second = seconds;
-        }
-        if (frames != previous_frames) { last_audio = mika_now(); previous_frames = frames; }
-        if (mika_now() - last_audio > 5.0) {
-            mika_status_clear();
-            fputs("mika: no audio is arriving from the microphone. Check your system input.\n", stderr);
-            result = 1;
-            break;
-        }
-        if (frames >= MIKA_MAX_FRAMES) {
-            limit_reached = 1;
-            result = 0;
-            break;
-        }
-        int key = mika_terminal_key(terminal, 100);
-        if (key == '\n') { result = 0; break; }
-        if (key == 27 || key == 3) { result = 130; break; }
-        if (key == MIKA_KEY_ERROR) {
-            mika_status_clear();
-            fputs("mika: lost the controlling terminal.\n", stderr);
-            result = 1;
-            break;
-        }
-    }
+    if (cancel_requested(&cancel)) { result = cancel.result; goto done; }
+    result = record_until_finished(audio, &cancel, &limit_reached);
     mika_audio_stop(audio);
     if (result) { goto done; }
-    if (cancel_requested(&cancel)) { result = 130; goto done; }
+    if (cancel_requested(&cancel)) { result = cancel.result; goto done; }
     if (mika_audio_failed(audio)) {
         mika_status_clear();
         fputs("mika: microphone capture failed; no transcript produced.\n", stderr);
@@ -152,7 +150,7 @@ int main(int argc, char **argv)
         mika_status_show("Transcribing...");
     }
     result = mika_engine_run(engine, mika_audio_samples(audio), mika_audio_frames(audio), &text);
-    if (cancel_requested(&cancel)) { result = 130; }
+    if (cancel_requested(&cancel)) { result = cancel.result; }
     if (!result && !raw && text && text[strspn(text, " \t\r\n\v\f")]) {
         int formatting = 1;
         MikaPunctuationFailure failure = MIKA_PUNCTUATION_INPUT;
@@ -187,15 +185,17 @@ int main(int argc, char **argv)
 #endif
             }
         }
-        if (cancel_requested(&cancel)) { result = 130; }
+        if (cancel_requested(&cancel)) { result = cancel.result; }
     }
 done:
     mika_audio_close(audio);
     mika_status_clear();
-    /* Restore the terminal BEFORE output: a broken stdout pipe must not leave raw mode. */
+    /* Restore the terminal before publishing output or final diagnostics. */
     mika_terminal_close(terminal);
     free(model_path);
     if (mika_cancelled(NULL)) { result = 130; }
+    else if (cancel.result) { result = cancel.result; }
+    if (result == 1 && cancel.result == 1) { fputs("mika: lost the controlling terminal.\n", stderr); }
     if (result == 130) { fputs("Cancelled.\n", stderr); }
     if (!result && (!text || !text[strspn(text, " \t\r\n\v\f")])) { result = 3; }
     if (result == 3) { fputs("No speech recognized.\n", stderr); }

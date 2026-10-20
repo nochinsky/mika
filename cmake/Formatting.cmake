@@ -1,5 +1,5 @@
-# One fixed formatter, not a backend registry. Preparation and payload layout
-# are deliberately unchanged; --raw bypasses loading it at runtime.
+# One fixed formatter, not a backend registry; --raw bypasses runtime loading.
+# The outer timeout exceeds the Python worker's kill/reap deadline.
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR
    NOT ((APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$") OR
         ((WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux") AND
@@ -17,6 +17,7 @@ endif()
 set(punctuation_stage "${CMAKE_BINARY_DIR}/_deps/punctuation")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/fetch_punctuation.py"
     --stage "${punctuation_stage}" --platform "${punctuation_platform}"
+    TIMEOUT 910
     COMMAND_ERROR_IS_FATAL ANY)
 # Self-contained SentencePiece avoids newer upstream's automatic Abseil checkout.
 set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)

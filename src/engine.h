@@ -10,11 +10,14 @@ typedef struct {
     int speech_admitted;
 } MikaEngineTimings;
 
-/* Mandatory bundled CPU speech detection precedes ASR, also in raw mode.
- * Return 3 for no detected speech, 1 for failures, 130 for cancellation.
- * The returned transcript is borrowed until close or the next run. */
+/* Sequential CPU sessions; callback/userdata live until close. Open returns
+ * 0, failure 1 or abort 130 and clears *out on failure. Close accepts NULL. */
 int mika_engine_open(const char *model_path, MikaCancelled cancelled, void *userdata,
                      MikaEngine **out);
+/* Mandatory bundled speech admission precedes ASR, also in raw mode. PCM is
+ * borrowed unchanged for this synchronous call. Returns 0, no speech 3,
+ * failure 1 or abort 130. *text is cleared first, then borrowed until next run
+ * or close. The caller retains the reason behind a boolean abort callback. */
 int mika_engine_run(MikaEngine *engine, const float *pcm, size_t frames,
                     const char **text);
 MikaEngineTimings mika_engine_timings(const MikaEngine *engine);

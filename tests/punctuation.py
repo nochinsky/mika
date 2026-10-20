@@ -13,9 +13,9 @@ import tempfile
 import unittest
 
 PROBE, ASSETS, FAKE, FIXTURE = [Path(arg).resolve() for arg in sys.argv[1:]]
-sys.argv = [__file__, str(PROBE), str(FIXTURE)]
-import cli  # Reuse PTY harness; its TestCases are not collected in this module.
 sys.argv = [__file__]
+if os.name == 'posix':
+    from terminal import TerminalProcess
 
 SHORT = 'hello how are you i am fine thank you i am going home are you coming with me'
 # Deterministic native-model smoke output, not a quality-approved reference.
@@ -59,6 +59,28 @@ class Native(unittest.TestCase):
         result = self.run_probe()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, EXPECTED + '\n')
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX child-resource accounting')
+    def test_peak_memory_units_match_os(self):
+        # A fresh Python parent has exactly one child in RUSAGE_CHILDREN. Compare
+        # units with wide tolerance for allocations during final native cleanup.
+        command = '''import json, re, resource, subprocess, sys
+result = subprocess.run(sys.argv[1:], capture_output=True, text=True, check=True)
+peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+if sys.platform == 'darwin': peak /= 1024
+reported = int(re.search(r'peak_rss_kib=(\\d+)', result.stderr)[1])
+print(json.dumps({'os_kib': peak, 'reported_kib': reported}))
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'public.txt'
+            source.write_text(SHORT, encoding='utf-8')
+            result = subprocess.run([sys.executable, '-c', command, str(PROBE), str(ASSETS), str(source)],
+                                    capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        memory = json.loads(result.stdout)
+        self.assertGreater(memory['reported_kib'], 0)
+        self.assertGreater(memory['os_kib'], 0)
+        self.assertTrue(.25 <= memory['reported_kib'] / memory['os_kib'] <= 4, memory)
 
     def test_new_internal_boundary_after_negated_verb_keeps_raw(self):
         # Independently authored text; no private recording/transcript fixture.
@@ -271,7 +293,7 @@ class Controls(unittest.TestCase):
         cls.temporary.cleanup()
 
     def start(self, binary=FIXTURE, raw=False, redirect=False, **env):
-        process = cli.TerminalProcess(binary=str(binary), args=['--raw'] if raw else [],
+        process = TerminalProcess(binary=str(binary), args=['--raw'] if raw else [],
                                       env={'MIKA_FIXTURE_TEXT': SHORT, **env}, redirect_stderr=redirect)
         self.addCleanup(process.close)
         if not redirect:

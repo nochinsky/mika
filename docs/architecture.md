@@ -30,6 +30,16 @@ physical-device smoke test do not imply full acceptance or notarization.
 7. Cleanup frees sessions before borrowed models, restores the terminal and exits.
    Synchronous third-party work can delay cancellation. Audio remains in memory.
 
+The capture wait loop is separate from top-level orchestration; resource ownership
+and the single cleanup path remain explicit in `main.c`. A detected terminal read
+failure returns 1, not user cancellation (130), even when an inference API reports
+both through its abort callback. Downloads also stop on terminal read failure,
+discard temporary data and retain the previous model.
+
+POSIX dictation ignores SIGPIPE so a broken stdout/stderr pipe or HTTPS write cannot
+terminate it before terminal cleanup. A failed transcript write returns 1; bytes
+already accepted by an output device cannot be retracted.
+
 ## Module boundaries
 
 | Module | Responsibility | Boundary |
@@ -76,6 +86,23 @@ public-file inference establishes natural-dictation accuracy.
 
 Review important names, numbers, negations and constraints. Exit 0 is not a
 confidence score or permission for unattended execution.
+
+## Build and distribution boundaries
+
+Build-only `scripts/asset_io.py` owns bounded HTTPS, verified caches and payload
+publication/rollback for both asset preparers. Model identities stay in their
+respective scripts, not a registry. The formatter converts in its preparation
+worker, so its hard timeout cannot orphan a separate converter. Workers are
+killed/reaped after 120 seconds for Silero or 900 seconds for FullStop; CMake's
+outer limits are slightly longer. Installed Mika uses neither Python nor these tools.
+
+Handled preparation/publication failures retain the previous payload; failed
+rollback retains its recovery directory. This is a single-writer build-cache
+contract, not crash-atomic or concurrent-writer recovery. Forced termination can
+leave scratch/recovery directories. Packaging requires exact formatter/speech
+members and rejects linked payloads rather than following them into unrelated data.
+Platform installers remain self-contained for stock shell/PowerShell availability;
+their behavior is tested separately rather than hidden behind a cross-platform framework.
 
 ## Validation boundaries
 

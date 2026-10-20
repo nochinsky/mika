@@ -12,7 +12,7 @@ struct Download {
     EVP_MD_CTX *hash;
     MikaTerminal *terminal;
     uint64_t bytes, limit;
-    int cancelled;
+    int stop_result; /* 0 running, 1 terminal failure, 130 cancellation. */
     int last_percent;
     int show_progress;
 };
@@ -34,10 +34,13 @@ static int download_progress(void *userdata, curl_off_t total, curl_off_t curren
 {
     (void)total; (void)current; (void)upload_total; (void)uploaded;
     struct Download *download = userdata;
-    if (download->terminal && mika_terminal_key(download->terminal, 0) == 27) {
-        download->cancelled = 1;
+    for (unsigned i = 0; download->terminal && i < 128 && !download->stop_result; ++i) {
+        int key = mika_terminal_key(download->terminal, 0);
+        if (key == MIKA_KEY_TIMEOUT) { break; }
+        if (key == 27 || key == 3) { download->stop_result = 130; }
+        if (key == MIKA_KEY_ERROR) { download->stop_result = 1; }
     }
-    if (mika_cancelled(NULL) || download->cancelled) { return 1; }
+    if (mika_cancelled(NULL) || download->stop_result) { return 1; }
     int percent = download->limit ? (int)(100.0 * (double)download->bytes / (double)download->limit) : 0;
     if (download->show_progress && percent != download->last_percent) {
         fprintf(stderr, "\r  Downloading model: %3d%%", percent);
@@ -123,7 +126,11 @@ int mika_model_download(const char *url, const char *destination, uint64_t expec
     }
     CURLcode transfer = curl_easy_perform(curl);
     if (download.show_progress) { fputc('\n', stderr); }
-    if (mika_cancelled(NULL) || download.cancelled) { result = 130; goto done; }
+    if (mika_cancelled(NULL) || download.stop_result == 130) { result = 130; goto done; }
+    if (download.stop_result) {
+        fputs("mika: lost the controlling terminal; download discarded.\n", stderr);
+        goto done;
+    }
     long response = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response);
     if (transfer != CURLE_OK || response != 200) {

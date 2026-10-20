@@ -4,15 +4,13 @@ Builds fetch original weights and quantize locally with pinned development
 packages. No Python runtime, conversion, downloads or uploads during dictation.
 """
 import argparse
-import hashlib
 import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tarfile
 import tempfile
-import urllib.request
+from asset_io import fetch, payload_transaction, run_bounded, verified
+from quantize_punctuation import convert
 
 VERSION = '1.13.8'  # Only the ORT binaries are used from this CPU/no-TTS SDK.
 RAW = 'https://raw.githubusercontent.com/'
@@ -46,58 +44,7 @@ SDK = {
     'linux': ('linux-x64-shared-no-tts-lib', 9249201, 'bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b', ['libonnxruntime.so']),
     'windows': ('win-x64-shared-MT-Release-no-tts-lib', 7536080, 'a1253e665c4f236119c443c8932a8acfca32a546c78c05962d483c9a0eae21b7', ['onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'onnxruntime.lib']),
 }
-
-
-class HTTPSOnly(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not newurl.lower().startswith('https://'):
-            raise ValueError('Refusing a non-HTTPS redirect')
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def verified(path, size, digest):
-    if not path.is_file() or path.stat().st_size != size:
-        return False
-    sha = hashlib.sha256()
-    with path.open('rb') as source:
-        for block in iter(lambda: source.read(65536), b''):
-            sha.update(block)
-    return sha.hexdigest() == digest
-
-
-def fetch(cache, name, spec):
-    url, size, digest = spec
-    destination = cache / name
-    if verified(destination, size, digest):
-        return destination
-    if not url.startswith('https://'):
-        raise ValueError('HTTPS required')
-    print('Fetching pinned punctuation asset:', name, flush=True)
-    opener = urllib.request.build_opener(HTTPSOnly())
-    with tempfile.NamedTemporaryFile(dir=cache, delete=False) as output:
-        temporary = Path(output.name)
-        try:
-            with opener.open(url, timeout=60) as response:
-                if response.status != 200:
-                    raise ValueError('Unexpected HTTP response')
-                total = 0
-                while True:
-                    data = response.read(65536)
-                    if not data:
-                        break
-                    total += len(data)
-                    if total > size:
-                        raise ValueError('Asset exceeds expected size')
-                    output.write(data)
-            output.flush()
-            if not verified(temporary, size, digest):
-                raise ValueError('Asset size/SHA-256 mismatch: ' + name)
-            output.close()
-            os.replace(temporary, destination)
-        finally:
-            output.close()
-            temporary.unlink(missing_ok=True)
-    return destination
+PREPARE_TIMEOUT = 900  # Covers all downloads, verified conversion and publication.
 
 
 def quantized_model(cache):
@@ -108,8 +55,7 @@ def quantized_model(cache):
     with tempfile.NamedTemporaryFile(dir=cache, suffix='.onnx', delete=False) as output:
         temporary = Path(output.name)
     try:
-        subprocess.run([sys.executable, str(Path(__file__).with_name('quantize_punctuation.py')),
-                        str(source), str(temporary)], check=True, timeout=300)
+        convert(source, temporary)
         if not verified(temporary, *QUANTIZED):
             raise ValueError('Derived FullStop model size/SHA-256 mismatch; refusing to publish it')
         os.replace(temporary, destination)
@@ -118,20 +64,14 @@ def quantized_model(cache):
     return destination
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--stage', required=True, type=Path)
-    parser.add_argument('--platform', choices=SDK, required=True)
-    args = parser.parse_args()
-    cache = args.stage / 'downloads'
-    include = args.stage / 'include'
+def prepare(stage, platform):
+    cache = stage / 'downloads'
+    include = stage / 'include'
     for directory in (cache, include):
         directory.mkdir(parents=True, exist_ok=True)
-    # Publish a fresh payload only after all downloads/conversion succeed. Do not
-    # retain the previous experimental backend's unused libraries or vocabulary.
-    with tempfile.TemporaryDirectory(dir=args.stage, prefix='payload-') as temporary:
-        payload = Path(temporary) / 'payload'
-        (payload / 'licenses').mkdir(parents=True)
+    # Both bundled payloads share publication/rollback policy, not model policy.
+    with payload_transaction(stage) as payload:
+        (payload / 'licenses').mkdir()
         shutil.copyfile(quantized_model(cache), payload / 'model.int8.onnx')
         for name, spec in ARTIFACTS.items():
             target = payload / name if name == 'sp.model' else payload / 'licenses' / name
@@ -143,7 +83,7 @@ def main():
         for name, (size, digest) in HEADERS.items():
             url = ORT + 'include/onnxruntime/core/session/' + name
             shutil.copyfile(fetch(cache, name, (url, size, digest)), include / name)
-        variant, size, digest, libraries = SDK[args.platform]
+        variant, size, digest, libraries = SDK[platform]
         root = 'sherpa-onnx-v' + VERSION + '-' + variant
         name = root + '.tar.bz2'
         url = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/v' + VERSION + '/' + name
@@ -156,11 +96,23 @@ def main():
                 target = include / library if library.endswith('.lib') else payload / library
                 with bundle.extractfile(member) as src, target.open('wb') as dst:
                     shutil.copyfileobj(src, dst)
-        destination = args.stage / 'payload'
-        if destination.exists():
-            shutil.rmtree(destination)
-        payload.rename(destination)
-    print('Pinned FullStop assets ready:', args.stage / 'payload', flush=True)
+    return stage / 'payload'
+
+
+def prepare_bounded(stage, platform, timeout=PREPARE_TIMEOUT):
+    run_bounded(__file__, stage, timeout, ('--platform', platform))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--stage', required=True, type=Path)
+    parser.add_argument('--platform', choices=SDK, required=True)
+    parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.worker:
+        print('Pinned FullStop assets ready:', prepare(args.stage, args.platform), flush=True)
+    else:
+        prepare_bounded(args.stage, args.platform)
 
 
 if __name__ == '__main__':

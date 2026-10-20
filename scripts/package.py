@@ -40,11 +40,14 @@ with tempfile.TemporaryDirectory() as temporary:
         if args.platform == 'windows' else
         {'libmika-fullstop.dylib', 'libonnxruntime.dylib'} if args.platform == 'macos' else
         {'libmika-fullstop.so', 'libonnxruntime.so'})
-    if not punctuation.is_dir() or not (punctuation / 'licenses').is_dir():
-        raise SystemExit('Missing installed formatting payload/notices')
-    actual = {item.name for item in punctuation.iterdir() if item.is_file()}
-    if actual != required or any(item.is_dir() and item.name != 'licenses' for item in punctuation.iterdir()):
-        raise SystemExit('Incomplete or unexpected files in formatting payload')
+    notices = punctuation / 'licenses'
+    if punctuation.is_symlink() or not punctuation.is_dir() or notices.is_symlink() or not notices.is_dir():
+        raise SystemExit('Missing or linked installed formatting payload/notices')
+    # Never dereference a staged link into unrelated/private build-machine data.
+    entries = list(punctuation.iterdir())
+    if ({item.name for item in entries} != required | {'licenses'} or
+            any(item.is_symlink() or not item.is_file() for item in entries if item.name != 'licenses')):
+        raise SystemExit('Incomplete, linked or unexpected files in formatting payload')
     if any(not item.is_file() or item.is_symlink() or item.suffix not in {'.txt', '.md', '.yaml'}
            for item in (punctuation / 'licenses').iterdir()):
         raise SystemExit('Unexpected files in formatting notices')

@@ -1,14 +1,11 @@
 """Offline CLI/PTY tests. All recording tests use fake devices, never a real mic."""
-import errno
 import os
 from pathlib import Path
 import signal
 import re
-import struct
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 MIKA = str(Path(sys.argv[1]).resolve())
@@ -17,118 +14,8 @@ sys.argv = sys.argv[:1]
 VERSION = re.search(r'project\(mika VERSION ([^ ]+)', (Path(__file__).resolve().parents[1] / 'CMakeLists.txt').read_text()).group(1)
 
 if os.name == "posix":
-    import fcntl
-    import pty
-    import select
     import termios
-
-    class TerminalProcess:
-        def __init__(self, binary=FIXTURE, env=None, columns=80, redirect_stderr=False, args=('--raw',)):
-            self.master, self.slave = pty.openpty()
-            fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
-            self.redirect_stderr = redirect_stderr
-            self.diagnostics = b''
-            self.before = termios.tcgetattr(self.slave)
-            self.messages = b""
-
-            def session():
-                os.setsid()
-                # BSD does not implicitly give a newly acquired PTY our group.
-                signal.signal(signal.SIGTTOU, signal.SIG_IGN)
-                fcntl.ioctl(self.slave, termios.TIOCSCTTY, 0)
-                os.tcsetpgrp(self.slave, os.getpgrp())
-                signal.signal(signal.SIGTTOU, signal.SIG_DFL)
-
-            self.process = subprocess.Popen(
-                [binary, *args], stdin=self.slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE if redirect_stderr else self.slave,
-                env={**os.environ, **(env or {})}, preexec_fn=session,
-            )
-            # Only the child owns the slave. Keeping an extra BSD slave open can
-            # block session revocation/process exit. The master accepts termios
-            # queries too, including the live-parent-shell restoration check.
-            os.close(self.slave)
-            self.slave = None
-
-        def wait_for(self, marker, timeout=10):
-            deadline = time.monotonic() + timeout
-            while marker not in self.messages:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise AssertionError(f"timeout waiting for {marker!r}: {self.messages!r}")
-                ready, _, _ = select.select([self.master], [], [], min(remaining, 0.1))
-                if ready:
-                    self.messages += os.read(self.master, 4096)
-                elif self.process.poll() is not None:
-                    raise AssertionError(f"process exited before {marker!r}: {self.messages!r}")
-
-        def send(self, keys):
-            os.write(self.master, keys)
-
-        def finish(self):
-            try:
-                # BSD can wait for PTY output drain during session exit. Read
-                # terminal/status and redirected streams concurrently, never wait
-                # for exit first (nor spin on the master's EOF).
-                streams = {self.master: 'terminal'}
-                for name in ('stdout', 'stderr'):
-                    stream = getattr(self.process, name)
-                    if stream is not None and not stream.closed:
-                        streams[stream.fileno()] = name
-                captured = {'stdout': b'', 'stderr': b''}
-                deadline = time.monotonic() + 10
-                while streams:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise AssertionError(f'PTY process did not finish: {self.messages!r}')
-                    ready, _, _ = select.select(list(streams), [], [], min(remaining, .1))
-                    for fd in ready:
-                        try:
-                            chunk = os.read(fd, 65536)
-                        except OSError as error:
-                            if fd != self.master or error.errno != errno.EIO:
-                                raise
-                            chunk = b''  # Linux master EOF.
-                        if not chunk:
-                            del streams[fd]
-                        elif streams[fd] == 'terminal':
-                            self.messages += chunk
-                        else:
-                            captured[streams[fd]] += chunk
-                self.process.wait(timeout=max(.01, deadline - time.monotonic()))
-                self.diagnostics = captured['stderr']
-                self.assert_restored()
-                return self.process.returncode, captured['stdout']
-            finally:
-                self.close()
-
-        def assert_restored(self):
-            try:
-                after = termios.tcgetattr(self.master)
-            except termios.error as error:
-                # Darwin revokes the PTY when its session leader exits. Its
-                # post-exit mode is unobservable; a live-shell test below checks
-                # restoration before that revoke, rather than skipping it.
-                if sys.platform == 'darwin' and error.args[0] in (errno.EIO, errno.ENXIO):
-                    return
-                raise
-            if after != self.before:
-                raise AssertionError('terminal modes were not restored')
-
-        def close(self):
-            # Close the PTY before waiting for a killed BSD session leader; its
-            # exit/revoke can otherwise wait on our still-open terminal handles.
-            for name in ("master", "slave"):
-                fd = getattr(self, name, None)
-                if fd is not None:
-                    os.close(fd)
-                    setattr(self, name, None)
-            if self.process.poll() is None:
-                self.process.kill()
-                self.process.wait(timeout=5)
-            if self.process.stdout:
-                self.process.stdout.close()
-            if self.process.stderr:
-                self.process.stderr.close()
+    from terminal import TerminalProcess
 
 
 class Arguments(unittest.TestCase):
@@ -195,7 +82,7 @@ class Arguments(unittest.TestCase):
 @unittest.skipUnless(os.name == "posix", "POSIX PTY controls; Windows needs a native console test")
 class Controls(unittest.TestCase):
     def start(self, **env):
-        process = TerminalProcess(env=env)
+        process = TerminalProcess(binary=FIXTURE, env=env)
         self.addCleanup(process.close)
         process.wait_for(b"Listening 00:")
         modes = termios.tcgetattr(process.master)
@@ -244,7 +131,7 @@ class Controls(unittest.TestCase):
             self.assertNotIn(old_log, process.messages)
 
     def test_narrow_dumb_terminal_does_not_wrap_or_use_ansi(self):
-        process = TerminalProcess(columns=32, env={"TERM": "dumb"})
+        process = TerminalProcess(binary=FIXTURE, columns=32, env={"TERM": "dumb"})
         self.addCleanup(process.close)
         process.wait_for(b"Listening 00:")
         process.send(b"\r")
@@ -254,7 +141,7 @@ class Controls(unittest.TestCase):
         self.assertTrue(all(len(part) < 32 for part in process.messages.split(b"\r")))
 
     def test_redirected_stderr_contains_no_transient_status(self):
-        process = TerminalProcess(redirect_stderr=True, env={"MIKA_FIXTURE_LIMIT": "1"})
+        process = TerminalProcess(binary=FIXTURE, redirect_stderr=True, env={"MIKA_FIXTURE_LIMIT": "1"})
         self.addCleanup(process.close)
         self.assertEqual(process.finish(), (0, b"Test transcript.\n"))
         self.assertEqual(process.diagnostics, b"")
@@ -281,6 +168,39 @@ class Controls(unittest.TestCase):
             process.wait_for(b"Transcribing")
             process.send(key)
             self.assertEqual(process.finish(), (130, b""))
+
+    def test_lost_terminal_during_inference_is_failure_not_cancellation(self):
+        import shlex
+        # Ignore SIGHUP as nohup does, so the terminal API observes the loss.
+        for args in (('--raw',), ()):
+            command = 'trap "" HUP; exec ' + shlex.join([FIXTURE, *args])
+            process = TerminalProcess(binary='/bin/bash', args=('-c', command),
+                                      env={'MIKA_FIXTURE_SLOW_INFERENCE': '1'})
+            self.addCleanup(process.close)
+            process.wait_for(b'Listening 00:')
+            process.send(b'\r')
+            process.wait_for(b'Transcribing')
+            process.hangup()
+            self.assertEqual(process.finish(), (1, b''))
+
+    def test_broken_stderr_does_not_interrupt_terminal_cleanup(self):
+        import shlex
+        for flags, expected in (({'MIKA_FIXTURE_DEVICE_LOST': '1'}, 1),
+                                ({'MIKA_FIXTURE_GATE_REJECT': '1', 'MIKA_FIXTURE_LIMIT': '1'}, 3)):
+            reader, writer = os.pipe()
+            os.close(reader)  # The child's stderr is broken before it starts.
+            command = (shlex.quote(FIXTURE) + f' --raw 2>&{writer}; result=$?; '
+                       'printf "CHILD_STATUS:%s\\n" "$result" >&2; read -r ack; exit "$result"')
+            try:
+                process = TerminalProcess(binary='/bin/bash', args=('-c', command),
+                                          env=flags, pass_fds=(writer,))
+            finally:
+                os.close(writer)
+            self.addCleanup(process.close)
+            process.wait_for(f'CHILD_STATUS:{expected}'.encode())
+            self.assertEqual(termios.tcgetattr(process.master), process.before)
+            process.send(b'ack\n')
+            self.assertEqual(process.finish(), (expected, b''))
 
     def test_inference_error_restores_terminal(self):
         process = self.start(MIKA_FIXTURE_INFERENCE_ERROR="1")
@@ -317,7 +237,7 @@ class Controls(unittest.TestCase):
             self.assertEqual(process.finish(), expected)
 
     def test_duration_limit_is_explicit(self):
-        process = TerminalProcess(env={"MIKA_FIXTURE_LIMIT": "1"})
+        process = TerminalProcess(binary=FIXTURE, env={"MIKA_FIXTURE_LIMIT": "1"})
         self.addCleanup(process.close)
         result = process.finish()
         self.assertEqual(result, (0, b"Test transcript.\n"))
@@ -326,7 +246,7 @@ class Controls(unittest.TestCase):
 
     def test_audio_and_model_failures_do_not_print_text(self):
         for flag in ("MIKA_FIXTURE_AUDIO_ERROR", "MIKA_FIXTURE_DEVICE_LOST", "MIKA_FIXTURE_MODEL_ERROR"):
-            process = TerminalProcess(env={flag: "1"})
+            process = TerminalProcess(binary=FIXTURE, env={flag: "1"})
             self.addCleanup(process.close)
             self.assertEqual(process.finish(), (1, b""))
 
@@ -345,7 +265,8 @@ class Controls(unittest.TestCase):
         process.process.stdout.close()
         process.send(b"\r")
         status, _ = process.finish()
-        self.assertIn(status, (-signal.SIGPIPE, 1))
+        self.assertEqual(status, 1)
+        self.assertIn(b'cannot write the transcript', process.messages)
 
 
 if __name__ == "__main__":

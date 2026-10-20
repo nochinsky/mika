@@ -3,9 +3,11 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('assets', ROOT / 'scripts/fetch_punctuation.py')
 assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(assets)
@@ -30,6 +32,13 @@ class Metadata(unittest.TestCase):
         self.assertIn('--draft=false --latest', publish)
         version = json.loads((ROOT / 'vcpkg.json').read_text(encoding='utf-8'))['version-string']
         self.assertIn('Mika v' + version, (ROOT / '.github/release-notes.md').read_text(encoding='utf-8'))
+
+    def test_model_free_ci_keeps_sanitizer_coverage(self):
+        workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        core = workflow.split('  model-free:', 1)[1].split('  package:', 1)[0]
+        for required in ('-DMIKA_SANITIZERS=ON', 'ASAN_OPTIONS: detect_leaks=1',
+                         'UBSAN_OPTIONS: halt_on_error=1', 'ctest --test-dir build-sanitizers'):
+            self.assertIn(required, core)
 
     def test_native_asset_identities_match_fetcher(self):
         source = (ROOT / 'src/punctuation_backend.cpp').read_text()

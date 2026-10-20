@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -14,6 +15,8 @@ import urllib.response
 
 REAL_BUILD_OPENER = urllib.request.build_opener
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import asset_io
 SPEC = importlib.util.spec_from_file_location('fetch_speech_assets', ROOT / 'scripts/fetch_speech_assets.py')
 assets = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(assets)
@@ -36,7 +39,7 @@ class SpeechAssets(unittest.TestCase):
         self.destination = self.cache / assets.MODEL_FILE
         self.spec = (URL, len(DATA), DIGEST)
         # A test that inadvertently attempts a real download must fail.
-        self.network = patch.object(assets.urllib.request, 'build_opener',
+        self.network = patch.object(asset_io.urllib.request, 'build_opener',
                                     side_effect=AssertionError('Network forbidden in unit tests')).start()
         self.addCleanup(patch.stopall)
 
@@ -77,12 +80,12 @@ class SpeechAssets(unittest.TestCase):
 
     def test_atomic_publication_only_after_validation(self):
         self.download()
-        replace = assets.os.replace
+        replace = asset_io.os.replace
         def publish(source, target):
-            self.assertTrue(assets.verified(source, len(DATA), DIGEST))
+            self.assertTrue(asset_io.verified(source, len(DATA), DIGEST))
             self.assertFalse(target.exists())
             replace(source, target)
-        with patch.object(assets.os, 'replace', side_effect=publish) as publish_mock:
+        with patch.object(asset_io.os, 'replace', side_effect=publish) as publish_mock:
             assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
         publish_mock.assert_called_once()
 
@@ -99,7 +102,7 @@ class SpeechAssets(unittest.TestCase):
         self.download().open.side_effect = TimeoutError('offline')
         with self.assertRaises(TimeoutError):
             assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
-        self.assertFalse(assets.verified(self.destination, len(DATA), DIGEST))
+        self.assertFalse(asset_io.verified(self.destination, len(DATA), DIGEST))
         self.assertEqual(list(self.cache.iterdir()), [self.destination])
 
     def test_interrupted_download_is_not_published(self):
@@ -114,7 +117,7 @@ class SpeechAssets(unittest.TestCase):
         with self.assertRaises(ValueError):
             assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
         self.download()
-        with patch.object(assets.time, 'monotonic', side_effect=[0, 121]):
+        with patch.object(asset_io.time, 'monotonic', side_effect=[0, 121]):
             with self.assertRaises(TimeoutError):
                 assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
         self.assertEqual(list(self.cache.iterdir()), [])
@@ -142,7 +145,7 @@ class SpeechAssets(unittest.TestCase):
                 response.msg = 'offline fixture'
                 return response
 
-        opener = REAL_BUILD_OPENER(assets.NoRedirect(), OfflineHTTPS())
+        opener = REAL_BUILD_OPENER(asset_io.NoRedirect(), OfflineHTTPS())
         self.network.side_effect = None
         self.network.return_value = opener
         return bodies, urls
@@ -172,12 +175,12 @@ class SpeechAssets(unittest.TestCase):
         bodies, urls = self.redirect_opener([(302, '/loop')])
         with self.assertRaisesRegex(ValueError, 'Too many'):
             assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
-        self.assertEqual(len(urls), assets.MAX_REDIRECTS + 1)
+        self.assertEqual(len(urls), asset_io.MAX_REDIRECTS + 1)
         self.assertTrue(all(body.closed for body in bodies))
         self.assertEqual(list(self.cache.iterdir()), [])
 
     def test_cli_uses_bounded_preparation(self):
-        with patch.object(assets.sys, 'argv', ['fetch_speech_assets.py', '--stage', str(self.stage)]), \
+        with patch.object(sys, 'argv', ['fetch_speech_assets.py', '--stage', str(self.stage)]), \
                 patch.object(assets, 'prepare_bounded') as bounded, \
                 patch.object(assets, 'prepare', side_effect=AssertionError('Must run in worker')):
             assets.main()
@@ -194,7 +197,10 @@ import io
 from pathlib import Path
 import time
 from types import SimpleNamespace
+import sys
 spec = importlib.util.spec_from_file_location('assets', %r)
+sys.path.insert(0, str(Path(spec.origin).parent))
+import asset_io
 assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(assets)
 def block():
@@ -210,7 +216,7 @@ def open_response(*args, **kwargs):
     if %r == 'open':
         block()
     return Response()
-assets.urllib.request.build_opener = lambda *args: SimpleNamespace(open=open_response)
+asset_io.urllib.request.build_opener = lambda *args: SimpleNamespace(open=open_response)
 assets.main()
 ''' % (str(ROOT / 'scripts/fetch_speech_assets.py'), str(marker), str(late_marker), operation), encoding='utf-8')
                 processes = []
@@ -223,7 +229,7 @@ assets.main()
 
                 started = time.monotonic()
                 with patch.object(assets, '__file__', str(worker)), \
-                        patch.object(assets.subprocess, 'Popen', side_effect=start_worker):
+                        patch.object(asset_io.subprocess, 'Popen', side_effect=start_worker):
                     with self.assertRaises(subprocess.TimeoutExpired):
                         assets.prepare_bounded(self.stage, timeout=2)
                 self.assertLess(time.monotonic() - started, 7)
@@ -240,7 +246,7 @@ assets.main()
             self.destination.symlink_to(target)
         except (OSError, NotImplementedError) as error:
             self.skipTest('Host cannot create test symlinks: ' + str(error))
-        self.assertFalse(assets.verified(self.destination, len(DATA), DIGEST))
+        self.assertFalse(asset_io.verified(self.destination, len(DATA), DIGEST))
         self.download()
         assets.fetch(self.cache, assets.MODEL_FILE, self.spec)
         self.assertFalse(self.destination.is_symlink())

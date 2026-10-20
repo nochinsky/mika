@@ -126,6 +126,15 @@ jobs:
           cmake -S tests/model-free -B build-model-free -DCMAKE_BUILD_TYPE=Release
           cmake --build build-model-free --parallel 2
           ctest --test-dir build-model-free --output-on-failure
+      - name: Instrument owned core with AddressSanitizer and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cmake -S tests/model-free -B build-sanitizers -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DMIKA_SANITIZERS=ON
+          cmake --build build-sanitizers --parallel 2
+          ctest --test-dir build-sanitizers --output-on-failure
 
   package:
     name: ${{ matrix.platform }} x86-64

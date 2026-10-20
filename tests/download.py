@@ -15,6 +15,8 @@ import unittest
 
 DRIVER = str(Path(sys.argv[1]).resolve())
 sys.argv = sys.argv[:1]
+if os.name == 'posix':
+    from terminal import TerminalProcess
 
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl executable needed for local test certificates")
@@ -123,6 +125,31 @@ class Downloads(unittest.TestCase):
         result = subprocess.run(self.command("/empty", b""), env=self.env, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.target.read_bytes(), b"")
+        self.check_no_partial()
+
+    @unittest.skipUnless(os.name == 'posix', 'requires a POSIX controlling terminal')
+    def test_lost_terminal_discards_download(self):
+        self.slow_started.clear()
+        process = TerminalProcess(binary='/bin/bash', redirect_stderr=True, env=self.env,
+            args=('-c', 'trap "" HUP; exec "$@"', 'download-test', *self.command('/slow'), '--terminal'))
+        self.addCleanup(process.close)
+        self.assertTrue(self.slow_started.wait(timeout=5))
+        process.hangup()
+        self.assertEqual(process.finish(), (1, b''))
+        self.assertIn(b'lost the controlling terminal', process.diagnostics)
+        self.assertEqual(self.target.read_bytes(), b'previous model')
+        self.check_no_partial()
+
+    @unittest.skipUnless(os.name == 'posix', 'requires a POSIX controlling terminal')
+    def test_escape_behind_ordinary_keys_discards_download(self):
+        self.slow_started.clear()
+        process = TerminalProcess(binary=DRIVER, args=(*self.command('/slow')[1:], '--terminal'),
+                                  redirect_stderr=True, env=self.env)
+        self.addCleanup(process.close)
+        self.assertTrue(self.slow_started.wait(timeout=5))
+        process.send(b'ordinary keys\x1b')
+        self.assertEqual(process.finish(), (130, b''))
+        self.assertEqual(self.target.read_bytes(), b'previous model')
         self.check_no_partial()
 
     @unittest.skipUnless(os.name == "posix", "Windows requires a console Ctrl+C event")

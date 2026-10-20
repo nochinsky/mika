@@ -1,38 +1,43 @@
 # Mika
 
-Speak. Press **Enter**. Get text.
+Offline English dictation for **Mac, Linux and Windows**.
+Run `mika`, speak, press **Enter**, and get text in your terminal.
 
-Fast, offline English dictation for AI-agent prompts and everyday terminal use.
-No account, clipboard access, background service, or setup wizard.
+No account, cloud processing, background service or clipboard access.
 
 ## Install
 
-**Linux / Arch / WSL**
+### Mac — experimental
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | bash
-```
-
-**Windows — PowerShell**
-
-```powershell
-irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
-```
-
-**macOS — Apple Silicon, macOS 14+ (experimental)**
+Apple Silicon ARM64, macOS 14 or later. Intel Macs and Rosetta are not supported.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | bash
 ```
 
-Install as your normal user—no sudo/admin, compiler, Homebrew, or Python needed.
-Prebuilt downloads: **x86-64 Linux (glibc 2.35+)**, **Windows 10/11 x64**, and
-**Apple Silicon ARM64 macOS 14+**. Restart your terminal if `mika` is not found.
+Mac downloads are ad-hoc signed, **not notarized**. First use may require approval
+in macOS Privacy & Security for the executable or formatter libraries.
+Read the [Mac setup and security guide](docs/macos.md#first-run-security-approval).
 
-Mac downloads are included starting with **v0.3.1**, but support is experimental:
-native automated tests pass; physical microphone/permission/Gatekeeper checks
-remain pending. Builds are ad-hoc signed, **not notarized**. Intel/Rosetta Macs are
-not supported. See [Mac setup and limitations](docs/macos.md).
+### Linux
+
+x86-64, glibc 2.35 or later.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | bash
+```
+
+### Windows
+
+Windows 10 or 11, x64. Run in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
+```
+
+Install as your normal user, without sudo or administrator access. No compiler,
+Python or Homebrew is required. Restart your terminal if `mika` is not found.
+[Manual downloads](https://github.com/nochinsky/mika/releases) are also available.
 
 ## Use
 
@@ -41,36 +46,39 @@ mika
 ```
 
 Speak after **Listening**, then press **Enter** to finish. **Esc / Ctrl+C** cancels.
-Mika uses your system's default microphone. Recordings automatically finish at
-**5 minutes**. Press Enter sooner whenever you're done.
+Mika uses your system's default microphone and limits each recording to five minutes.
+Punctuation and capitalization are automatic; `mika --raw` skips formatting.
 
-Punctuation/capitalization is automatic. Use `mika --raw` to skip it. Formatting
-never rewrites transcript words, but speech recognition and punctuation can still
-be wrong—this is quick dictation, not an editor. Review negations, numbers and
-technical names before using the result as an agent instruction.
-
-The first run asks before downloading the **279 MB** speech model. Formatting and
-speech-detection assets come with the app. After that, everything works offline.
-Your audio stays in memory and is never uploaded or saved.
-
-To save the transcript instead:
+Only the transcript goes to stdout. To save it:
 
 ```sh
 mika > notes.txt
 ```
 
+The first run asks before downloading the **279 MB speech model**. Formatting and
+speech-detection data are bundled. After setup, dictation works offline on the CPU.
+Audio stays in memory and is never uploaded or saved by Mika.
+
+Recognition and punctuation can be wrong. Review names, numbers, negations and
+commands before using the text. Formatting does not correct misheard words.
+
 ## Update
 
-Close Mika and rerun the same installation command. It installs the latest release,
-or skips reinstallation if you're already current. Your downloaded model is kept.
+Close Mika and rerun your platform's installation command. Your downloaded speech
+model is kept. Check the installed version with `mika --version`.
 
 ## Uninstall
 
-Close Mika, then run as your normal user. Confirm to remove the app, downloaded
-speech model, and installer-created command/PATH setup. Notes saved outside the
-app directory are kept.
+Close Mika and run the matching command. Confirm to remove the managed app,
+downloaded model and Mika command/PATH setup. Files saved outside the app are kept.
 
-**Linux / Arch / WSL**
+**Mac**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | bash
+```
+
+**Linux**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | bash
@@ -82,16 +90,13 @@ curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.sh | 
 irm https://raw.githubusercontent.com/nochinsky/mika/main/uninstall.ps1 | iex
 ```
 
-**macOS — Apple Silicon**
+See [removal options](docs/usage.md#uninstalling) to keep the downloaded model.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | bash
-```
+## Documentation
 
-[Removal details & keeping the model](docs/usage.md#uninstalling).
+- [Usage and troubleshooting](docs/usage.md) · [Mac support](docs/macos.md)
+- [Build and contribute](CONTRIBUTING.md) · [Validation](docs/validation.md)
+- [Architecture](docs/architecture.md) · [Formatting](docs/punctuation.md)
 
-[Architecture & safety boundaries](docs/architecture.md) ·
-[Help & advanced installation](docs/usage.md) · [Build & contribute](CONTRIBUTING.md) ·
-[Releases](https://github.com/nochinsky/mika/releases)
-
-[MIT](LICENSE) for Mika's code. [Model and dependency licenses](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE) for Mika's code. Models and dependencies have
+[their own licenses](THIRD_PARTY_NOTICES.md).

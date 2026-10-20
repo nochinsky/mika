@@ -25,14 +25,17 @@ namespace fs = std::filesystem;
 
 class Library {
  public:
-    explicit Library(const fs::path &path) {
+    Library(const fs::path &path, const char *name, MikaPunctuationDiagnostic *diagnostic)
+        : name_(name), diagnostic_(diagnostic) {
 #ifdef _WIN32
         handle_ = LoadLibraryExW(path.c_str(), nullptr,
             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+        unsigned long code = handle_ ? 0 : GetLastError();
         if (handle_) {
             HMODULE pinned = nullptr;
             if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
                                    reinterpret_cast<LPCWSTR>(handle_), &pinned)) {
+                code = GetLastError();
                 FreeLibrary(handle_);
                 handle_ = nullptr;
             }
@@ -42,7 +45,14 @@ class Library {
 #else
         handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
 #endif
-        if (!handle_) { throw std::runtime_error("punctuation library"); }
+        if (!handle_) {
+#ifdef _WIN32
+            mika_punctuation_loader_diagnostic(diagnostic_, name_, nullptr, nullptr, code);
+#else
+            mika_punctuation_loader_diagnostic(diagnostic_, name_, nullptr, dlerror(), 0);
+#endif
+            throw std::runtime_error("punctuation library");
+        }
     }
     ~Library() {
         /* Keep runtime/tokenizer code and registries mapped until process exit.
@@ -61,15 +71,25 @@ class Library {
 #ifdef _WIN32
         auto address = GetProcAddress(handle_, name);
 #else
+        dlerror();
         auto address = dlsym(handle_, name);
 #endif
-        if (!address) { throw std::runtime_error("punctuation entry point"); }
+        if (!address) {
+#ifdef _WIN32
+            mika_punctuation_loader_diagnostic(diagnostic_, name_, name, nullptr, GetLastError());
+#else
+            mika_punctuation_loader_diagnostic(diagnostic_, name_, name, dlerror(), 0);
+#endif
+            throw std::runtime_error("punctuation entry point");
+        }
         static_assert(sizeof(Function) == sizeof(address), "Native function pointer size");
         Function function;
         std::memcpy(&function, &address, sizeof(function));
         return function;
     }
  private:
+    const char *name_;
+    MikaPunctuationDiagnostic *diagnostic_;
 #ifdef _WIN32
     HMODULE handle_ = nullptr;
 #else
@@ -84,8 +104,10 @@ bool stop(MikaPunctuationCancelled cancelled, void *userdata)
 }
 
 extern "C" int mika_punctuation_run(const char *directory, const char *raw,
-    MikaPunctuationCancelled cancelled, void *userdata, char **out, MikaPunctuationFailure *failure)
+    MikaPunctuationCancelled cancelled, void *userdata, char **out, MikaPunctuationFailure *failure,
+    MikaPunctuationDiagnostic *diagnostic)
 {
+    if (diagnostic) { std::memset(diagnostic, 0, sizeof(*diagnostic)); }
     if (failure) { *failure = MIKA_PUNCTUATION_NONE; }
     const auto fail = [failure](MikaPunctuationFailure reason) {
         if (failure) { *failure = reason; }
@@ -119,15 +141,14 @@ extern "C" int mika_punctuation_run(const char *directory, const char *raw,
         if (a != MIKA_MODEL_VALID || b != MIKA_MODEL_VALID) { return fail(stage); }
         stage = MIKA_PUNCTUATION_RUNTIME;
 #ifdef _WIN32
-        Library runtime(base / "onnxruntime.dll");
-        Library backend(base / "mika-fullstop.dll");
+        const char *runtime_name = "onnxruntime.dll", *backend_name = "mika-fullstop.dll";
 #elif defined(__APPLE__)
-        Library runtime(base / "libonnxruntime.dylib");
-        Library backend(base / "libmika-fullstop.dylib");
+        const char *runtime_name = "libonnxruntime.dylib", *backend_name = "libmika-fullstop.dylib";
 #else
-        Library runtime(base / "libonnxruntime.so");
-        Library backend(base / "libmika-fullstop.so");
+        const char *runtime_name = "libonnxruntime.so", *backend_name = "libmika-fullstop.so";
 #endif
+        Library runtime(base / runtime_name, runtime_name, diagnostic);
+        Library backend(base / backend_name, backend_name, diagnostic);
         auto create = backend.symbol<decltype(&MikaFullstopOpen)>("MikaFullstopOpen");
         auto destroy = backend.symbol<decltype(&MikaFullstopClose)>("MikaFullstopClose");
         auto apply = backend.symbol<decltype(&MikaFullstopApply)>("MikaFullstopApply");

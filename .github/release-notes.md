@@ -47,9 +47,7 @@ stable Mac certification; please report real-device results with OS/terminal/inp
 - Safe per-user Linux/Windows/Mac removal, ownership checks, explicit keep-model
   support and recovery preservation. Updates keep the separate Granite cache.
 - Cross-platform release metadata: archives now write identical LF `VERSION`
-  files, while publication accepts exact-tag LF or Windows CRLF metadata. The
-  attempted v0.3.0 publication stopped at this overly strict check; no partial
-  release was made public and the original tag was not rewritten.
+  files, while publication accepts exact-tag LF or Windows CRLF metadata.
 - Shared executable-relative asset paths/offline verification, expanded native and
   model-free tests, five-minute regressions, and private opt-in developer validation
   tools. The installed application still never saves audio.
@@ -61,7 +59,7 @@ numbers and negations. Formatting preserves transcript words, not guaranteed int
 Review important instructions; exit 0 is not confidence or unattended-execution
 approval. No spelling guesses, model menus or LLM rewrite have been added.
 
-Linux/WSL x86-64 (glibc 2.35+):
+Linux x86-64 (glibc 2.35+):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install.sh | bash

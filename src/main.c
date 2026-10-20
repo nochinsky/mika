@@ -156,6 +156,7 @@ int main(int argc, char **argv)
     if (!result && !raw && text && text[strspn(text, " \t\r\n\v\f")]) {
         int formatting = 1;
         MikaPunctuationFailure failure = MIKA_PUNCTUATION_INPUT;
+        MikaPunctuationDiagnostic diagnostic = {{0}};
         if (mika_punctuation_input_valid(text)) {
             size_t bytes = strlen(text) + 1;
             raw_copy = malloc(bytes);
@@ -169,7 +170,7 @@ int main(int argc, char **argv)
                 mika_audio_close(audio);
                 audio = NULL;
                 mika_status_show("Formatting...");
-                formatting = mika_punctuation_run(NULL, text, cancel_requested, &cancel, &formatted, &failure);
+                formatting = mika_punctuation_run(NULL, text, cancel_requested, &cancel, &formatted, &failure, &diagnostic);
             }
         }
         if (!formatting) { text = formatted; }
@@ -178,6 +179,13 @@ int main(int argc, char **argv)
             mika_status_clear();
             fprintf(stderr, "mika: %s; keeping the raw transcript.\n",
                     mika_punctuation_failure_message(failure));
+            if (failure == MIKA_PUNCTUATION_RUNTIME && diagnostic.message[0]) {
+                fprintf(stderr, "mika: %s\n", diagnostic.message);
+#ifdef __APPLE__
+                fputs("mika: for an unidentified-developer block, see Mac first-run approval: "
+                      "https://github.com/nochinsky/mika/blob/main/docs/macos.md#first-run-security-approval\n", stderr);
+#endif
+            }
         }
         if (cancel_requested(&cancel)) { result = 130; }
     }

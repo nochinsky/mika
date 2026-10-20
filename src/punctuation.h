@@ -36,14 +36,28 @@ typedef enum {
 } MikaPunctuationFailure;
 const char *mika_punctuation_failure_message(MikaPunctuationFailure failure);
 
+#define MIKA_PUNCTUATION_DIAGNOSTIC_BYTES 768u
+typedef struct {
+    char message[MIKA_PUNCTUATION_DIAGNOSTIC_BYTES];
+} MikaPunctuationDiagnostic;
+/* Build a bounded, single-line ASCII diagnostic from loader data only. Names
+ * are fixed library/export identifiers, never transcript or C++ exception text.
+ * Native errors may contain local paths; control/non-ASCII bytes are escaped. */
+void mika_punctuation_loader_diagnostic(MikaPunctuationDiagnostic *diagnostic,
+    const char *library, const char *symbol, const char *native_error, unsigned long windows_error);
+
 typedef int (*MikaPunctuationCancelled)(void *userdata);
 /* 0: caller owns *out (free). 1: use raw unchanged. 130: cancel, print nothing.
  * A NULL directory selects the 'punctuation' sibling of the running executable.
  * Does not download, save input, or print transcripts/diagnostics.
- * Optional failure reason contains no input text, paths or native exception data. */
+ * Optional failure reason contains no input text, paths or native exception data.
+ * Optional diagnostic is reset on entry and populated only for loader failures;
+ * it may contain local OS paths, never dictated text or inference exceptions.
+ * Report it only on return 1 with failure RUNTIME, never on cancellation. */
 int mika_punctuation_run(const char *directory, const char *raw,
                          MikaPunctuationCancelled cancelled, void *userdata,
-                         char **out, MikaPunctuationFailure *failure);
+                         char **out, MikaPunctuationFailure *failure,
+                         MikaPunctuationDiagnostic *diagnostic);
 
 #ifdef __cplusplus
 }

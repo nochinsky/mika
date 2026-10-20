@@ -1,22 +1,21 @@
-# Laptop validation — 2026-10-18
+# Linux performance snapshot
 
-Local measurements, not portable-release certification or natural-dictation
-accuracy evidence. Reproduce with [the validation tools](validation.md).
+Measurements from **2026-10-18**, with a speech-admission follow-up on
+**2026-10-19**. These are dated local-source-build results, not current-release
+certification or natural-dictation accuracy. See [validation methods](validation.md)
+to reproduce them.
 
-## Environment and build
+## Environment
 
 - Intel Core Ultra 5 125H, 14 cores / 18 logical CPUs, approximately 16 GB RAM.
-- Native Arch Linux x86-64, kernel 7.2.10-arch1-1, PipeWire 1.6.9.
-- Plugged in/charging; CPU0 governor `powersave`. No governor/cache/kernel settings
-  were changed. Ordinary desktop workloads were present; no thermal isolation.
-- GCC 16.2.1, CMake 4.4.4, developer Python 3.12.14 in a project-local environment.
-- Source baseline `8721960`, with the validation tooling changes described here.
-- Release-mode **local source build**, `MIKA_NATIVE_CPU=ON`, system curl/crypto,
-  pinned speech/formatter assets. This binary is **not portable to unrelated CPUs**.
-- Existing installed speech weights reused after normal integrity verification.
-  Installed Mika, user PATH/profiles and OS packages were not changed.
-
-Build commands, with `build-tools/bin` added to PATH for local CMake/Ninja:
+- Linux x86-64, kernel 7.2.10, PipeWire 1.6.9.
+- Plugged in, CPU governor `powersave`, ordinary desktop workloads; no thermal
+  isolation or governor/global-cache/kernel changes.
+- GCC 16.2.1, CMake 4.4.4, project-local Python 3.12.14.
+- Baseline source `8721960` plus validation tooling, Release mode,
+  `MIKA_NATIVE_CPU=ON`, system curl/crypto and pinned assets. Not a portable bundle.
+- Existing verified model reused; no installed app, profiles or OS packages changed
+  during these measurements.
 
 ```sh
 cmake -S . -B build-laptop -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -26,128 +25,90 @@ cmake --build build-laptop --parallel 4
 ctest --test-dir build-laptop --output-on-failure
 ```
 
-## Regression checks
+## Regression and microphone checks
 
-- **16/16 full native CTest entries passed**, including real raw/default speech,
-  five-minute processing, native formatting, fallback/integrity/cancellation,
-  CLI/PTY, local HTTPS, installers and packaging fixtures.
-- **12/12 model-free entries passed** in Release and again with ASan/UBSan,
-  leak detection enabled and undefined behavior configured to halt.
-- Source-build installation/relocation to a path containing spaces and Unicode:
-  version, raw/default public-file inference and sibling formatter loading passed.
-  This was **not** the static-dependency/CPU-dispatched portable-release audit.
-- Existing known JFK sample through the new spoken evaluator: 0% normalized WER
-  raw/formatted, no critical flags, preserved words. This is a scorer smoke test
-  on an already-used sample, **not a blind or representative accuracy result**.
-- No Windows execution or native Windows microphone validation was performed.
+The baseline passed 16/16 native and 12/12 model-free tests, including ASan/UBSan
+on owned code. Source install/relocation with spaces/Unicode passed version and
+public-file raw/formatted inference. Public JFK produced 0% normalized WER in a
+scorer smoke test; it was already a known fixture, not a blind accuracy benchmark.
+These historical counts do not describe the expanded current suite.
 
-## Real microphone startup and cancellation
-
-Five fresh real CLI processes per cache mode, each observed through a private PTY,
-then allowed 1.2 seconds after Listening and cancelled with Esc. Default laptop
-analog input; no audio saved/uploaded, no transcript retained.
+Five fresh real CLI processes per cache mode used the default analog input,
+waited 1.2 seconds after Listening and cancelled with Esc. No audio/transcripts
+were saved or uploaded.
 
 | Cache mode | Median launch → observed Listening | Median Esc → exit | Median whole-process peak RSS |
 | --- | ---: | ---: | ---: |
-| Normal filesystem caches | 248.4 ms | 4.7 ms | 295.3 MiB |
-| Best-effort file-local eviction | 350.7 ms | 9.3 ms | 294.1 MiB |
+| Ordinary caches | 248.4 ms | 4.7 ms | 295.3 MiB |
+| File-local eviction requested | 350.7 ms | 9.3 ms | 294.1 MiB |
 
-**10/10** runs reached at least one second on the audio frame counter, restored
-terminal modes, returned 130 and emitted no stdout. This establishes real sample
-delivery/cancellation, **not** intelligibility, intended input choice or ASR
-accuracy. Observation includes scheduler/PTY overhead. A fully cold OS/hardware
-start was not measured.
+All ten runs received at least one second of frames, returned 130, emitted no
+stdout and restored the terminal. This proves sample delivery/cancellation, not
+correct input choice or intelligibility. Timing includes scheduler/PTY overhead;
+a fully cold system was not measured.
 
-## File-pipeline latency and memory by duration
+## File pipeline
 
-Five fresh processes per duration/mode/cache combination, run sequentially. Exact
-10/60/300-second WAVs were generated by repeating the already-used public JFK
-fixture. Includes checksum, decode, speech load/inference, formatting where enabled,
-and teardown. **Excludes microphone/console overhead; these are not measured
-Enter-to-output timings.** Peak RSS is the whole process, not an additive formatter
-cost. Normal desktop background activity and run ordering can influence differences.
+Five fresh processes per duration/mode/cache combination used exact-length repeated
+public JFK audio. Includes checksum, decoding, speech loading/inference, optional
+formatting and teardown. **Excludes microphone/console overhead and live
+Enter-to-output timing.** RSS is whole-process.
 
-| Input | Cache mode | Raw median | Formatted median | Raw peak RSS median | Formatted peak RSS median |
+| Input | Cache mode | Raw median | Formatted median | Raw RSS median | Formatted RSS median |
 | --- | --- | ---: | ---: | ---: | ---: |
-| 10 s | Normal | 0.601 s | 0.727 s | 321.5 MiB | 322.4 MiB |
+| 10 s | Ordinary | 0.601 s | 0.727 s | 321.5 MiB | 322.4 MiB |
 | 10 s | Eviction requested | 0.710 s | 0.876 s | 321.8 MiB | 321.9 MiB |
-| 60 s | Normal | 2.373 s | 2.555 s | 468.2 MiB | 469.4 MiB |
+| 60 s | Ordinary | 2.373 s | 2.555 s | 468.2 MiB | 469.4 MiB |
 | 60 s | Eviction requested | 2.551 s | 2.746 s | 469.8 MiB | 469.4 MiB |
-| 300 s | Normal | 11.672 s | 12.041 s | 1186.7 MiB | 1189.8 MiB |
+| 300 s | Ordinary | 11.672 s | 12.041 s | 1186.7 MiB | 1189.8 MiB |
 | 300 s | Eviction requested | 11.784 s | 11.959 s | 1185.7 MiB | 1186.6 MiB |
 
-Eviction means `POSIX_FADV_DONTNEED` on owned benchmark inputs/binaries/assets,
-**not guaranteed cold caches**. No global cache flushing or sudo. Speech checksum
-medians were approximately 154–158 ms normal versus 255–260 ms with eviction;
-checksum plus model load approximately 221–228 versus 326–330 ms. Cache advice
-therefore affected measured I/O, but does not establish a rebooted-system baseline.
-At five minutes compute dominates, and small cross-run differences are not evidence
-that eviction speeds up formatting.
+Eviction was best-effort `POSIX_FADV_DONTNEED`, not guaranteed cold caches.
+Checksum medians were about 154–158 ms ordinary versus 255–260 ms after eviction;
+checksum plus model load was 221–228 versus 326–330 ms. Run order and desktop load
+can affect differences. Only completed five-run groups are included; an interrupted
+long-duration invocation was rerun. The separate five-minute regression retained
+all expected public-speech segments and the final phrase in both modes.
 
-The 10/60-second and 300-second groups completed in separate invocations. One
-initial long command hit the harness timeout; the unfinished group was rerun in
-full. Only completed five-run groups appear above. The existing separate
-five-minute regression also verified all 25 expected public-speech segments and
-the final phrase, raw and formatted.
+## Formatting
 
-## Formatter-only checks
+All 90 public examples preserved words/order with zero fallbacks. Original/additional
+punctuation F1 was 80.4%/90.0%; case F1 89.7%/92.0%; question recall 10/10 and 16/16,
+with no extra questions. References were unchanged; advisory original targets
+remain unmet. See [formatting limitations](punctuation.md#quality-and-limitations).
 
-The unchanged 30 original references reproduced punctuation F1 **80.4%**, case F1
-**89.7%**, question recall **10/10**, no extra questions and **zero fallbacks**.
-The unchanged additional 60 reproduced **90.0%**, **92.0%**, **16/16**, no extra
-questions and **zero fallbacks**. All 90 preserved words/order. Original advisory
-style targets remain unmet; no reference was changed.
+Five-process median full formatting-stage cost was **135.8 ms / 121.1 MiB** for
+18 words and **263.8 ms / 121.3 MiB** for 748 repeated-public-speech words. Memory
+is whole-process, not additive to ASR. The local payload was 82,021,715 bytes;
+compiled module size varies by build.
 
-Five-process median full formatter-stage cost was **135.8 ms / 121.1 MiB** for
-18 words and **263.8 ms / 121.3 MiB** for 748 repeated-public-speech words.
-RSS is whole-process. Local formatter payload including notices: **82,021,715
-bytes**, compiler/build dependent. These are not incremental ASR memory costs.
+## Speech-admission follow-up
 
-## Speech-admission follow-up — 2026-10-19
+Integration `acdb693` plus provisioning fixes `4b08b9d` passed 21/21 full Linux and
+15/15 model-free groups. Owned runtime/policy passed 15/15 ASan/UBSan groups before
+the provisioning-only fixes. These were local checks, not native Mac/Windows
+acceptance at that source revision.
 
-Integration source `acdb693` plus provisioning fixes `4b08b9d` passed **21/21 full
-Linux CTest groups** and **15/15 model-free groups**. The owned runtime/policy also
-passed **15/15 ASan/UBSan groups** before the provisioning-only fixes. Independent
-read-only runtime and asset reviews accepted the changes after two network-bound
-fetcher issues and handled-publication rollback were fixed. This is not native
-Windows/Mac evidence for that integration HEAD.
+The classifier rejected nine deterministic synthetic non-speech inputs and admitted
+five public-speech variants, including 1% amplitude and one second of speech with
+pauses. Missing/truncated/wrong-hash VAD data failed closed in both modes.
+Admission was not accuracy: attenuated ASR could lose words including “not.”
 
-The actual CPU classifier rejected nine deterministic non-speech clips, including
-the original digital silence/two white-noise/100 Hz tone false-success cases.
-Five public-speech variants were admitted, including attenuation to 1% amplitude
-and a one-second extract surrounded by pauses. Missing, truncated and same-size
-wrong-hash VAD data failed closed in raw/default mode in a relocated probe.
-**Admission is not intelligibility:** ASR wording deteriorated with attenuation,
-including loss of “not” on a quieter public sample. No natural-mic accuracy claim
-follows from these tests.
+Three alternating fresh processes per mode used the same 11-second public JFK
+file, ordinary caches and the same laptop/power policy:
 
-Three alternating fresh baseline/gated processes per mode on the **same 11-second
-public JFK file**, normal filesystem caches and this laptop/power policy:
-
-| Mode | Frozen pre-gate baseline median | Gated median | Baseline / gated peak RSS medians |
+| Mode | Pre-gate baseline median | Gated median | Baseline / gated RSS medians |
 | --- | ---: | ---: | ---: |
 | Raw | 706.0 ms | 716.2 ms | 328.7 / 333.9 MiB |
 | Default | 833.0 ms | 840.6 ms | 327.1 / 330.7 MiB |
 
-The gate itself took approximately **10.7–11.1 ms**, with a **1,241,056-byte**
-bundled model verified on launch. These small differences are a cost estimate,
-not a confidence interval or evidence of an ASR speedup. Full Granite hashing
-remains enabled. File timings include checksum/load/inference/formatting where
-applicable and teardown, not live Enter-to-output or launch-to-Listening.
-The comparison report is local/ignored at
-`build-readiness-reviews/public-gate-comparison.json`; no private speech was used.
+The gate took about 10.7–11.1 ms and adds a verified 1,241,056-byte model. This is
+a small-sample cost estimate, not a confidence interval or ASR speedup. Full Granite
+hashing remains enabled. No private speech was used for these measurements.
 
-## Still pending
+## Limits
 
-The 12 predeclared agent prompts and private collection/evaluation tools are ready,
-but **no completed guided human corpus has been reviewed here**. Meaning-changing
-errors, literal recognition, disfluency, multiple speakers/accents/noise conditions,
-and live spoken-prompt Enter-to-output timing still require explicit participation.
-Microphone startup tests and repeated public files must not be presented as that
-missing evidence. The recorder needs separate explicit saved-audio consent.
-
-Raw machine-readable reports and logs are local/ignored under
-`build-laptop/reports/`, notably `ctest.log`, `microphone-normal.json`,
-`microphone-evict.json`, `durations-all.json`, `formatter-resources.json`,
-`quality-original.json` and `quality-additional.json`. No private microphone audio
-or transcripts are contained in these reports.
+No validated clean human-dictation benchmark is established by this report.
+Meaning, technical literals, disfluency, multiple speakers/noise conditions and
+live spoken-prompt latency require separately consented evaluation. Microphone
+startup and repeated public files must not be presented as that evidence.

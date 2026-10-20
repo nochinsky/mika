@@ -168,11 +168,41 @@ class Native(unittest.TestCase):
         result = self.run_probe(assets=target)
         self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
         self.assertIn('failure=3', result.stderr)
+        self.assertIn('cannot load formatter library ' + RUNTIME[0], result.stderr)
+        self.assertNotIn(SHORT, result.stderr)
+        if os.name == 'nt':
+            self.assertRegex(result.stderr, r'Windows error \d+')
+
+    def test_invalid_runtime_identifies_library_without_transcript(self):
+        target = self.root / 'invalid-runtime'
+        shutil.copytree(self.fake_assets, target, dirs_exist_ok=True)
+        (target / RUNTIME[0]).write_bytes(b'not a native library')
+        result = self.run_probe(assets=target)
+        self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+        self.assertIn('cannot load formatter library ' + RUNTIME[0], result.stderr)
+        self.assertNotIn(SHORT, result.stderr)
+        self.assertLess(len(result.stderr), 1024)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX filenames support control characters')
+    def test_native_loader_diagnostic_escapes_paths_and_is_bounded(self):
+        target = self.root / ('control\x1b[31m\n' + 'x' * 100)
+        for _ in range(6):
+            target = target / ('y' * 120)
+        shutil.copytree(self.fake_assets, target)
+        (target / RUNTIME[0]).unlink()
+        result = self.run_probe(assets=target)
+        self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+        self.assertIn('cannot load formatter library ' + RUNTIME[0], result.stderr)
+        self.assertNotIn('\x1b', result.stderr)
+        self.assertTrue(all(32 <= ord(ch) < 127 or ch == '\n' for ch in result.stderr))
+        self.assertLess(len(result.stderr), 1024)
 
     def test_native_failure_and_cpp_exceptions_keep_raw(self):
         for failure in ('CREATE_NULL', 'CREATE_THROW', 'APPLY_NULL', 'APPLY_THROW', 'HUGE'):
             result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_' + failure: '1'})
             self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'), result.stderr)
+            self.assertNotIn(SHORT, result.stderr)
+            self.assertNotIn('cannot load formatter library', result.stderr)
 
     def test_unsafe_native_output_keeps_raw(self):
         for out in ('Hello world.', 'Invented words.', SHORT + ' extra', 'Hello\x1b[31m', ''):
@@ -199,6 +229,8 @@ class Native(unittest.TestCase):
         shutil.copy2(ASSETS / RUNTIME[0], target / RUNTIME[1])
         result = self.run_probe(assets=target)
         self.assertEqual((result.returncode, result.stdout), (1, SHORT + '\n'))
+        self.assertIn('cannot resolve MikaFullstopOpen in formatter library ' + RUNTIME[1], result.stderr)
+        self.assertNotIn(SHORT, result.stderr)
 
     def test_native_cancellation_status_discards_allocated_output(self):
         result = self.run_probe(assets=self.fake_assets, env={'MIKA_PUNCT_TEST_CANCEL': '1'})
@@ -310,6 +342,25 @@ class Controls(unittest.TestCase):
         self.assertEqual(process.finish(), (0, (SHORT + '\n').encode()))
         self.assertIn(b'formatting data is missing', process.messages)
         self.assertIn(b'keeping the raw transcript', process.messages)
+
+    def test_runtime_diagnostic_is_stderr_only_and_raw_mode_stays_quiet(self):
+        target = self.root / 'loader-error'
+        target.mkdir()
+        binary = target / FIXTURE.name
+        shutil.copy2(FIXTURE, binary)
+        shutil.copytree(ASSETS, target / 'punctuation')
+        (target / 'punctuation' / RUNTIME[0]).unlink()
+        text = 'this transcript must not appear in diagnostics'
+        process = self.start(binary=binary, redirect=True, MIKA_FIXTURE_LIMIT='1', MIKA_FIXTURE_TEXT=text)
+        self.assertEqual(process.finish(), (0, (text + '\n').encode()))
+        self.assertIn(b'keeping the raw transcript', process.diagnostics)
+        self.assertIn(('cannot load formatter library ' + RUNTIME[0]).encode(), process.diagnostics)
+        self.assertNotIn(text.encode(), process.diagnostics)
+        if sys.platform == 'darwin':
+            self.assertIn(b'#first-run-security-approval', process.diagnostics)
+        raw = self.start(binary=binary, raw=True, redirect=True, MIKA_FIXTURE_LIMIT='1')
+        self.assertEqual(raw.finish(), (0, (SHORT + '\n').encode()))
+        self.assertEqual(raw.diagnostics, b'')
 
     def test_rejected_negation_boundary_is_successful_raw_fallback(self):
         text = 'check the changes but not run remove dash dash recursive'

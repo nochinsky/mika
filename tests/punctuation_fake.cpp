@@ -24,7 +24,7 @@ extern "C" int MikaFullstopApply(MikaFullstop *, const char *raw,
         std::fflush(stderr);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    if (std::getenv("MIKA_PUNCT_TEST_APPLY_THROW")) { throw std::runtime_error("test apply"); }
+    if (std::getenv("MIKA_PUNCT_TEST_APPLY_THROW")) { throw std::runtime_error(raw); }
     if (std::getenv("MIKA_PUNCT_TEST_APPLY_NULL")) { return 1; }
     const char *value = std::getenv("MIKA_PUNCT_TEST_OUTPUT");
     if (!value) { value = raw; }

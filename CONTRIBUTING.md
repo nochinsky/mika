@@ -1,151 +1,131 @@
-# Building and contributing
+# Contributing
 
-Read [GOAL.md](GOAL.md) first. Mika is a one-shot English dictation CLI, not a
-configurable speech platform. Keep changes small and preserve stdout/exit behavior.
+Mika is a one-shot English dictation CLI. Read [the scope](GOAL.md) and
+[architecture](docs/architecture.md) before changing runtime behavior. Keep changes
+focused and preserve the transcript, cancellation, privacy and exit-code contracts.
 
 ## Build requirements
 
-- x86-64 Linux or Windows; experimental macOS 14+ ARM64. CMake **3.24+**,
-  C17/C++17 compiler and threads. See [macOS build/status](docs/macos.md).
-- libcurl **7.85+**, OpenSSL Crypto **1.1.1+** (or the pinned vcpkg manifest).
-- **Python 3.12+ and the pinned conversion requirements for development/builds**.
-  Python is never an installed-app dependency.
+- **Mac:** Apple Silicon ARM64, macOS 14+, Xcode Command Line Tools; experimental.
+- **Linux:** x86-64, C17/C++17 compiler and native development dependencies.
+- **Windows:** x64, Visual Studio 2022 Desktop development with C++ and vcpkg.
+- **All platforms:** CMake 3.24+, libcurl 7.85+, OpenSSL Crypto 1.1.1+, Python 3.12+
+  and the pinned build-only conversion requirements.
 
-CMake fetches pinned original FullStop weights, reproduces and verifies INT8
-conversion, and prepares a sibling `bin/punctuation/` payload. It also verifies
-and bundles the fixed **1,241,056-byte Silero CPU VAD** under `bin/speech/`;
-no conversion or runtime download is needed for that classifier. First builds download the 210 MB original weights,
-CPU ONNX Runtime assets and SentencePiece/transcribe.cpp/miniaudio sources.
-Verified downloads are cached under the build directory. No conversion occurs in
-normal app use. Exact provenance/versions are in [docs/punctuation.md](docs/punctuation.md).
+Python is a development dependency, not an installed-app requirement. Initial
+builds fetch pinned native sources, FullStop weights, CPU ONNX Runtime and the
+Silero VAD. FullStop INT8 conversion is reproduced and verified; prepared data is
+cached in the build directory. Model and dependency identities are pinned in
+source; see [notices](THIRD_PARTY_NOTICES.md) and [formatting provenance](docs/punctuation.md#provenance-and-licenses).
 
-Create a local tooling environment (use an installed Python 3.12+ interpreter):
+Create a project-local tooling environment:
 
 ```sh
 python3 -m venv build-tools
 build-tools/bin/python -m pip install -r scripts/requirements-punctuation.txt
 ```
 
-On Windows use `py -3.12 -m venv build-tools`, then
+On Windows, use `py -3.12 -m venv build-tools` and
 `build-tools\Scripts\python.exe -m pip install -r scripts/requirements-punctuation.txt`.
-Activation and a global execution-policy change are unnecessary.
+Activation or a global PowerShell execution-policy change is unnecessary.
 
-### Linux
+### Mac
 
-Install compiler/CMake/curl/OpenSSL development dependencies using your OS tools.
-On recent Ubuntu/Debian: `build-essential cmake pkg-config libcurl4-openssl-dev
-libssl-dev`; Arch: `base-devel cmake curl openssl`. Ensure the versions above are
-met. ALSA/PulseAudio runtime libraries load dynamically; no audio development
-headers are needed.
+Homebrew may supply **developer-only** CMake, curl and OpenSSL dependencies:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMIKA_NATIVE_CPU=ON \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DMIKA_NATIVE_CPU=OFF \
+  -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+  -DCURL_ROOT="$(brew --prefix curl)" \
   -DPython3_EXECUTABLE="$PWD/build-tools/bin/python"
-cmake --build build --parallel 8
+cmake --build build --parallel 4
 ./build/bin/mika
 ```
 
-`MIKA_NATIVE_CPU=ON` tunes the speech backend to this machine: **do not distribute
-that binary to unrelated CPUs**. Default OFF is conservative; portable release
-bundles use runtime CPU dispatch instead. Everything is CPU-only.
+Mac uses one static CPU speech backend. See [Mac security and acceptance status](docs/macos.md).
+
+### Linux
+
+Install compiler, CMake, pkg-config, curl and OpenSSL development packages through
+your package manager. ALSA/PulseAudio runtime libraries load dynamically; audio
+headers are not required.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DPython3_EXECUTABLE="$PWD/build-tools/bin/python"
+cmake --build build --parallel 4
+./build/bin/mika
+```
 
 ### Windows
 
-Use Visual Studio 2022's Desktop development with C++ toolchain and vcpkg. From a
-developer PowerShell, adjusting the vcpkg path:
+From a developer PowerShell, adjust the vcpkg path:
 
 ```powershell
 cmake -S . -B build -A x64 `
   -DCMAKE_TOOLCHAIN_FILE=C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake `
   -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
   "-DPython3_EXECUTABLE=$PWD/build-tools/Scripts/python.exe"
-cmake --build build --config Release --parallel 8
+cmake --build build --config Release --parallel 4
 .\build\bin\Release\mika.exe
 ```
 
-There is one app configuration: formatting by default, `--raw` at runtime. There
-is no experimental formatting switch or alternate model selector. Experimental
-macOS support is ARM64-only, with one static CPU speech backend and no GPU/Core ML
-execution; see [the native CI and hardware-testing limitations](docs/macos.md).
-Keep both `punctuation/` and `speech/` beside the executable. Missing or damaged
-speech-detection data is a hard error, including with `--raw`. See the
-[module boundaries and safety contract](docs/architecture.md).
+Keep `punctuation/` and `speech/` beside the executable. `--raw` skips formatting,
+not verified speech admission. `MIKA_NATIVE_CPU=ON` optionally tunes a local speech
+build to its host; do not distribute it to unrelated CPUs. A system-library build
+is not a portable release bundle.
 
-## Tests and measurements
-
-For quick checks without model downloads/conversion or Python ML packages, use
-[the separate model-free test entry point](docs/validation.md#fast-model-free-checks).
-The same guide covers laptop duration/resource measurements, real microphone
-startup timing, and an explicitly consented human spoken-prompt evaluation workflow.
-See the [Core Ultra 5 laptop validation snapshot](docs/laptop-validation.md) for
-measured results and the remaining natural-speech evidence gap.
+## Test and measure
 
 ```sh
 ctest --test-dir build --output-on-failure
 ```
 
-Tests use fake microphone/inference devices, synthetic PCM, isolated installer
-homes, local HTTPS, authored prompts and native formatting. They do not record a
-microphone. Build-time asset preparation uses the network; tests themselves do not.
-The `openssl` executable is needed to generate test TLS certificates.
+Multi-config Windows builds need `-C Release`. Tests use fake capture, synthetic
+PCM, public audio, isolated installer homes and local HTTPS—not live microphones.
+The `openssl` executable generates local test certificates. Build-time preparation
+uses the network; the test suite does not.
 
-To enable public-file speech tests using an existing verified Granite model:
+For checks without model downloads, ONNX Runtime or Python ML packages, use the
+[model-free build](docs/validation.md#fast-model-free-checks). Configure a separate
+build with `MIKA_SANITIZERS=ON` to instrument Mika-owned code on GCC/Clang; run with
+`ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`.
+
+Enable public-file recognition and five-minute tests with an existing verified model:
 
 ```sh
 cmake -S . -B build -DMIKA_TEST_MODEL=/absolute/path/to/model.gguf
-cmake --build build --parallel 8
+cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
-./build/bin/mika-audio-devices  # metadata only, never records
 ```
 
-Real-model tests run raw and default-formatted public JFK audio, including a
-300-second repetition/length regression. The admission regression checks synthetic
-non-speech, attenuated/brief public speech, and missing/truncated/wrong-hash
-bundled VAD data in both modes. That is not natural dictation accuracy.
-`MIKA_SANITIZERS=ON` in a separate build instruments owned code on GCC/Clang; use
-`ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`. Third-party libraries
-are not themselves instrumented. Never replace missing hardware testing with a
-claim that console fixtures prove every desktop microphone works.
+[Validation tools](docs/validation.md) cover file latency/memory, opt-in microphone
+timing and separately consented private recordings. Keep private data out of Git,
+CI and release assets. Public-file accuracy and fake-device results do not replace
+hardware testing. Preserve references and report failures; do not adjust scoring
+or invent literal corrections to improve results.
 
-The scripts `evaluate_punctuation.py`, `benchmark_punctuation.py`, and
-`benchmark_pipeline.py` record style metrics, full formatting-stage cost and
-public-file pipeline cost. The pipeline probe includes the Granite checksum and
-reports model-ready timing, but does not measure actual microphone opening or
-end-to-end time to Listening. Resource scopes belong beside every published number.
-The old prose-style thresholds remain advisory; never change references just to
-turn a score green. Prompt fixtures test post-formatting preservation, not whether
-ASR heard the intended words.
+## Install and release
 
-## Installation and releases
+`cmake --install build --prefix "$HOME/.local"` installs a source build, not an
+installer-managed application. Move an existing regular `~/.local/bin/mika` aside
+before switching to a release installer's symlink.
 
-`cmake --install build --prefix "$HOME/.local"` installs a source build and its
-formatting/speech-detection payloads, docs and licenses; multi-config generators need `--config Release`.
-This is not an installer-managed app. Move a regular `~/.local/bin/mika` aside
-before switching to the release installer's symlink.
+Portable builds follow [the workflow](.github/workflows/build.yml): native Mac
+ARM64, Linux x86-64/glibc 2.35 and Windows x64, pinned static curl/crypto and the
+bundled formatting/VAD data. The separately cached Granite model is not packaged.
 
-For portable releases follow [.github/workflows/build.yml](.github/workflows/build.yml):
-Ubuntu 22.04/glibc 2.35, native Windows Server 2022 and native Apple Silicon
-macOS 14+, pinned static curl/crypto, CPU-dispatched Linux/Windows speech modules,
-a static Mac CPU backend, and the existing formatter payload. A system-library
-source build is **not** a standalone release just because dispatch is enabled.
-CI validates default/raw inference after real installation/relocation, console and
-installer transactions, integrity/fallback/cancellation, and public five-minute
-processing before a matching tag may publish. No private audio or test executables
-are packaged. Formatting and VAD weights are included; the **279 MB Granite ASR
-GGUF is not**.
+For a release:
 
-For a dependency/model update: pin source and artifact identities, preserve notices
-and modification provenance, reproduce the conversion hash, run metadata/safety
-checks and all three native platform jobs, and inspect quality/resource changes. Update security
-sensitive dependencies deliberately; do not automatically chase new speech models.
+1. Update `CMakeLists.txt`, `vcpkg.json`, release notes and relevant documentation.
+2. Validate all three native jobs, model-free tests and installer/removal checks.
+3. Push the matching immutable `vX.Y.Z` tag. Never rewrite published tags.
+4. The publisher requires three archives and three checksums, validates embedded
+   versions/hashes, uploads to a draft and makes it public/latest only after all
+   six assets are uploaded.
 
-For a release: update the CMake project version and `vcpkg.json` together, update
-release notes/docs, validate all three native platform jobs, then push the matching `vX.Y.Z` tag.
-The release job depends on all three platforms (including `macos-cpu`), downloads
-all three `mika-*` artifacts, and checks the exact six-file archive/checksum set,
-embedded versions and SHA-256 values. It uploads into a draft and only makes it
-public/latest after all assets are present. Mac remains labeled experimental in
-release notes/docs until physical-device acceptance; publishing its asset does
-not imply notarization or hardware approval.
-The generated version header also supplies the downloader user-agent. Do not rewrite
-published tags. Keep original Mika MIT code separate from model/dependency licenses.
+Mac remains experimental pending [hardware acceptance](docs/macos.md#validation-status).
+Ad-hoc CI signing is not Developer ID signing or notarization. Dependency/model
+updates must pin identities, preserve licenses and modification notices, reproduce
+conversion hashes and review quality/resource changes on all platforms.

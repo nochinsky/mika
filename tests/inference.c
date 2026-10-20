@@ -79,7 +79,7 @@ int main(int argc, char **argv)
             ma_free(pcm, NULL);
             pcm = NULL;
             double formatting_start = mika_now();
-            int formatting = mika_punctuation_run(NULL, raw, NULL, NULL, &formatted, NULL);
+            int formatting = mika_punctuation_run(NULL, raw, NULL, NULL, &formatted, NULL, NULL);
             fprintf(stderr, "formatting=%d format_ms=%.3f\n", formatting,
                     1000.0 * (mika_now() - formatting_start));
             text = formatted ? formatted : raw;

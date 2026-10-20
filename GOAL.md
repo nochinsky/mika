@@ -1,39 +1,32 @@
-# Mika's scope
+# Scope
 
-Mika turns spoken English into a usable prompt for AI agents with minimal friction:
-**run `mika`, speak, press Enter, get text, exit.**
+Mika is a focused English dictation CLI for **Mac, Linux and Windows**:
+**run → speak → Enter → transcript on stdout → exit**. Mac support is experimental.
 
 ## Priorities
 
-1. Fast startup/transcription and sensible CPU, memory, and download costs.
-2. A reliable one-shot CLI: transcript on stdout, status/errors on stderr.
-3. Offline operation after the consented first speech-model download. No audio
-   uploads, saved recordings, accounts, telemetry, or background service.
-4. One fixed CPU ASR model (Granite Speech 5.0 470M TurboCTC Q4_K_M), a bundled
-   CPU speech-admission classifier (Silero VAD), and one fixed lightweight formatter
-   (English FullStop INT8). `--raw` skips only formatting, never speech admission.
-5. Preserve the ASR transcript's words/order through formatting. Formatting may
-   change ordinary ASCII case/add permitted punctuation, but cannot rewrite words.
-   Obvious literals retain their source case. This does not prevent ASR mishearing.
-6. Enter finishes; Esc/Ctrl+C cancels without a transcript. Five minutes ends
-   recording automatically. Rejected no-speech/failure produces no transcript.
-   Successful recognition is not proof of intended speech or semantic accuracy.
-7. Straightforward per-user installation and explicit safe updates on x86-64
-   Linux/WSL (glibc 2.35+) and Windows 10/11. Experimental macOS 14+ Apple Silicon
-   support uses the same CPU-only pipeline; native CI does not establish microphone
-   permissions/capture. No root/admin or end-user Python.
+1. Fast startup and transcription with reasonable CPU, memory and download costs.
+2. A reliable one-shot CLI: text on stdout, status/errors on stderr, documented exits.
+3. Offline operation after a consented first model download. No accounts, telemetry,
+   audio uploads, saved recordings or background service in the installed runtime.
+4. One fixed CPU pipeline: Granite Speech 5.0 470M TurboCTC Q4_K_M, verified Silero
+   speech admission and English FullStop INT8 formatting. `--raw` skips only formatting.
+5. Preserve recognized words/order and obvious literals through formatting. Never
+   guess identifiers, repair spelling or imply guaranteed meaning/recognition accuracy.
+6. Enter finishes; Esc/Ctrl+C cancels without a transcript. Recording is bounded at
+   five minutes. No-speech and operational failures do not publish transcripts.
+7. Per-user installation, explicit updates and safe removal without administrator
+   access or end-user Python. Respect platform permission and security controls.
 
-## Deliberate non-goals
+## Non-goals
 
-Publication-ready prose, guaranteed semantic accuracy, spelling/name dictionaries,
-LLM editing, multiple model modes, GPU requirements, long-form chunking, settings
-wizards/configuration files, clipboard access, simulated typing, and built-in agent
-integrations. Unix-style stdout/exit codes are the integration boundary.
+Publication-ready prose, guaranteed semantic accuracy, dictionaries, LLM rewriting,
+model menus, GPU requirements, long-form chunking, configuration wizards, clipboard
+access, simulated typing and automatic agent integrations. Stdout and exit codes
+are the integration boundary; success is not permission to execute dictated text.
 
-Keep quality/reference scores as honest regression measurements. Release decisions
-weigh prompt usefulness and measured resource costs, with safety and reliability
-as hard requirements—not an arbitrary prose-style score as a proxy for utility.
-Do not alter old references or force punctuation just to make a score pass.
-
-Prefer fixing observed problems over adding speculative options or abstractions.
-Source/build/test tooling may use Python; the installed application must not.
+Fix observed problems rather than adding speculative options or abstractions.
+Preserve references and report honest quality/resource measurements. Safety and
+reliability are release requirements; style scores are not a substitute for them.
+Development tools may use Python and explicitly consented private recordings;
+the installed application must require neither.

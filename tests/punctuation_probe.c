@@ -47,7 +47,11 @@ static int probe(int argc, char **argv)
     char *out = NULL;
     double start = mika_now();
     MikaPunctuationFailure failure;
-    int result = mika_punctuation_run(argv[1], raw, cancelled, &cancel, &out, &failure);
+    MikaPunctuationDiagnostic diagnostic;
+    int result = mika_punctuation_run(argv[1], raw, cancelled, &cancel, &out, &failure, &diagnostic);
+    if (result == 1 && failure == MIKA_PUNCTUATION_RUNTIME && diagnostic.message[0]) {
+        fprintf(stderr, "mika: %s\n", diagnostic.message);
+    }
     fprintf(stderr, "format_ms=%.3f result=%d peak_rss_kib=%" PRIu64 " cancel_calls=%u failure=%d\n",
             (mika_now() - start) * 1000.0, result, peak_rss_kib(), cancel.calls, (int)failure);
     if (result != 130 && (puts(out ? out : raw) == EOF || fflush(stdout))) { result = 2; }

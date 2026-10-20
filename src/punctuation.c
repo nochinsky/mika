@@ -1,4 +1,5 @@
 #include "punctuation.h"
+#include <stdio.h>
 #include <string.h>
 
 const char *mika_punctuation_failure_message(MikaPunctuationFailure failure)
@@ -11,6 +12,47 @@ const char *mika_punctuation_failure_message(MikaPunctuationFailure failure)
     case MIKA_PUNCTUATION_OUTPUT: return "formatting result was rejected";
     case MIKA_PUNCTUATION_MEMORY: return "not enough memory for formatting";
     default: return "formatting is unavailable";
+    }
+}
+
+static int diagnostic_append(MikaPunctuationDiagnostic *diagnostic, size_t *length, const char *text)
+{
+    static const char hex[] = "0123456789abcdef";
+    if (!text) { return 1; }
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+        int escape = *p < 32 || *p >= 127;
+        size_t bytes = escape ? 4u : 1u;
+        /* Reserve an ellipsis and terminator; stop scanning on truncation. */
+        if (*length + bytes > sizeof(diagnostic->message) - 4u) {
+            memcpy(diagnostic->message + *length, "...", 4);
+            return 0;
+        }
+        if (escape) {
+            diagnostic->message[(*length)++] = '\\';
+            diagnostic->message[(*length)++] = 'x';
+            diagnostic->message[(*length)++] = hex[*p >> 4];
+            diagnostic->message[(*length)++] = hex[*p & 15];
+        } else {
+            diagnostic->message[(*length)++] = (char)*p;
+        }
+        diagnostic->message[*length] = 0;
+    }
+    return 1;
+}
+
+void mika_punctuation_loader_diagnostic(MikaPunctuationDiagnostic *diagnostic,
+    const char *library, const char *symbol, const char *native_error, unsigned long windows_error)
+{
+    if (!diagnostic) { return; }
+    diagnostic->message[0] = 0;
+    char code[64] = "";
+    if (windows_error) { snprintf(code, sizeof(code), " (Windows error %lu)", windows_error); }
+    const char *parts[] = {symbol ? "cannot resolve " : "cannot load ", symbol,
+        symbol ? " in " : "", "formatter library ", library ? library : "(unknown)", code,
+        native_error && *native_error ? ": " : "", native_error};
+    size_t length = 0;
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+        if (!diagnostic_append(diagnostic, &length, parts[i])) { break; }
     }
 }
 

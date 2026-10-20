@@ -7,6 +7,30 @@
 
 int main(void)
 {
+    struct { unsigned char before; MikaPunctuationDiagnostic value; unsigned char after; } diagnostic;
+    memset(&diagnostic, 0xa5, sizeof(diagnostic));
+    mika_punctuation_loader_diagnostic(NULL, NULL, NULL, NULL, 0);
+    mika_punctuation_loader_diagnostic(&diagnostic.value, "onnxruntime.dll", NULL, NULL, 126);
+    CHECK(!strcmp(diagnostic.value.message, "cannot load formatter library onnxruntime.dll (Windows error 126)"));
+    mika_punctuation_loader_diagnostic(&diagnostic.value, "backend", "MikaFullstopOpen", "missing symbol", 0);
+    CHECK(!strcmp(diagnostic.value.message, "cannot resolve MikaFullstopOpen in formatter library backend: missing symbol"));
+    mika_punctuation_loader_diagnostic(&diagnostic.value, "backend", NULL, "bad\x1b[31m\r\n\t\x7f\xc3\xa9", 0);
+    CHECK(strstr(diagnostic.value.message, "bad\\x1b[31m\\x0d\\x0a\\x09\\x7f\\xc3\\xa9"));
+    char native_error[4096];
+    memset(native_error, 'x', sizeof(native_error) - 1);
+    native_error[sizeof(native_error) - 1] = 0;
+    mika_punctuation_loader_diagnostic(&diagnostic.value, "backend", NULL, native_error, 0);
+    size_t diagnostic_length = strlen(diagnostic.value.message);
+    CHECK(diagnostic_length < sizeof(diagnostic.value.message));
+    CHECK(!strcmp(diagnostic.value.message + diagnostic_length - 3, "..."));
+    CHECK(diagnostic.before == 0xa5 && diagnostic.after == 0xa5);
+    for (unsigned byte = 1; byte < 256; ++byte) {
+        native_error[0] = (char)byte; native_error[1] = 0;
+        mika_punctuation_loader_diagnostic(&diagnostic.value, "backend", NULL, native_error, 0);
+        for (const unsigned char *p = (const unsigned char *)diagnostic.value.message; *p; ++p) {
+            CHECK(*p >= 32 && *p < 127);
+        }
+    }
     const char *good[][2] = {
         {"", ""}, {" \t\n", ""}, {"hello world", "Hello, world."},
         {"are you ready", "Are you ready?"}, {"ibm", "IBM"},

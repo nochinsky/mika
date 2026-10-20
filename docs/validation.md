@@ -1,16 +1,14 @@
-# Laptop and spoken-prompt validation
+# Testing and measurement
 
-These are developer tools, not new Mika runtime features. Reports distinguish
-software regressions, public-file resource costs, actual microphone startup and
-natural spoken-prompt accuracy. None is a substitute for the others.
+Software regressions, public-file performance, microphone behavior and natural
+recognition accuracy are separate kinds of evidence. Report which was measured.
+Developer tools below do not add recording or configuration features to Mika.
 
 ## Fast model-free checks
 
-This separate CMake entry point shares Mika's actual core targets and warning/
-sanitizer settings. It never fetches dependencies or prepares ML assets. It needs
-CMake 3.24+, a C17/C++17 compiler, system libcurl 7.85+/OpenSSL Crypto 1.1.1+ and
-Python 3.12+ **standard library only**. No installed Mika, microphone, speech model,
-ONNX Runtime, SentencePiece or Python ML packages are needed.
+Requires CMake 3.24+, C17/C++17, system libcurl 7.85+/OpenSSL Crypto 1.1.1+ and
+Python 3.12+ standard library. No ML packages, downloaded weights, installed Mika
+or microphone are needed.
 
 ```sh
 cmake -S tests/model-free -B build-model-free -DCMAKE_BUILD_TYPE=Release
@@ -18,21 +16,40 @@ cmake --build build-model-free --parallel 4
 ctest --test-dir build-model-free --output-on-failure
 ```
 
-Coverage: PCM/checksum/platform and executable-relative UTF-8 asset-path tests,
-real engine policy with fake ML adapters (CPU gate, cleanup, cancellation,
-repeated-run reset and original PCM), guard/renderer tests, actual main/platform
-code with fake speech/audio, local HTTPS downloads, installer transactions,
-packaging/metadata, evaluation math and benchmark-tool consent/privacy checks.
-The CLI test's model-preparation path is real, but microphone/inference are fake.
-It never accepts first-run download consent. Formatter model quality and actual
-inference/module loading still require the full build and its existing tests.
-Use a separate `build-model-free-asan` with `-DMIKA_SANITIZERS=ON` for ASan/UBSan.
+This shares the actual core targets and tests PCM, hashes/paths, engine policy
+with fake ML, cleanup/cancellation, original PCM preservation, CLI fixtures,
+formatting guards/diagnostic escaping, local HTTPS, installer/package transactions
+and evaluation tools. It does not exercise real inference or desktop permissions.
+For ASan/UBSan, use a separate build with `-DMIKA_SANITIZERS=ON` and
+`ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1`. Third-party code is not
+itself instrumented.
 
-## File-pipeline latency and memory
+## Native and public-file tests
 
-Build the normal application first as described in [CONTRIBUTING.md](../CONTRIBUTING.md).
-An existing verified speech model can be reused without copying or redownloading.
-For example on Linux:
+Build normally using [CONTRIBUTING.md](../CONTRIBUTING.md). Set `MIKA_TEST_MODEL`
+to an existing verified Granite file to include raw/formatted speech, five-minute
+processing and real admission checks:
+
+```sh
+cmake -S . -B build -DMIKA_TEST_MODEL=/absolute/path/to/model.gguf
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+```
+
+Windows multi-config builds need `--config Release` and CTest `-C Release`.
+Tests do not open a microphone. Native CI also checks actual installed/relocated
+packages on Mac, Linux and Windows. [Mac hardware acceptance](macos.md#validation-status)
+is separate.
+
+The `speech-admission` test rejects nine deterministic synthetic silence/noise/tone
+inputs, admits five public speech variants and fails closed on missing, truncated
+or wrong-hash VAD data in raw/default modes. Damage is confined to temporary
+relocated payloads. Admission does not prove intelligibility or intended speaker;
+quiet admitted speech can still lose negations.
+
+## File latency and memory
+
+Example using an existing Linux model cache:
 
 ```sh
 model="$HOME/.local/share/mika/models/granite-speech-5.0-470m-turboctc-Q4_K_M.gguf"
@@ -42,49 +59,25 @@ python3 scripts/benchmark_durations.py --probe build/bin/mika-inference-test \
   --output build/durations-report.json
 ```
 
-This runs fresh raw/default processes on exact-length **repeated public audio**.
-It checks formatting preservation, not intended-speech accuracy. Longer runs can
-be CPU/memory intensive. No microphone is opened, private recording is read, or
-transcript is retained in the report. The inference probe includes full model
-checksum, decoding, loading, inference, formatting where enabled, and teardown.
-It does **not** include terminal startup or microphone initialization. Reported
-peak RSS is whole-process peak, not formatter-incremental memory.
+Fresh raw/default processes receive exact-length **repeated public audio**. Timing
+includes checksum, decoding, model loading, admission, ASR, optional formatting and
+teardown—not terminal startup, microphone opening or live Enter-to-output. Peak RSS
+is whole-process, not incremental formatter memory. No private recordings are read
+or hypotheses retained in reports. Long runs can consume substantial resources.
 
-`warm` means normal filesystem caches, not guaranteed prewarmed files. `evict`
-requests Linux/POSIX file-local `POSIX_FADV_DONTNEED` for the probe, sample, speech
-weights and formatter payload before each process. This is **best effort, not a
-guaranteed cold start**: mapped/shared pages, filesystem metadata and other caches
-can remain warm. It never writes global drop-caches settings, needs no sudo and
-must not be compared as if it were a rebooted system. This mode is unavailable on
-Windows. Metadata records CPU, governor, power-source status and load when available;
-background workloads, thermal limits and power policy still affect comparisons.
+`warm` means ordinary filesystem caches, not guaranteed prewarming. POSIX `evict`
+requests file-local `POSIX_FADV_DONTNEED`; shared/mapped pages and metadata can remain
+cached. It is best effort, not a rebooted/cold-system comparison. It needs no sudo,
+never changes global cache settings and is unavailable on Windows. Power policy,
+thermals, background load and run order still matter.
 
-The probe separately emits `speech_gate_ms`, `asr_ms` and `speech_admitted` on
-stderr. Rejected non-speech has no ASR compute/transcript; it still pays checksum
-and engine initialization costs. Speech admission is included in pipeline time.
+The probe emits `speech_gate_ms`, `asr_ms` and `speech_admitted` on stderr. Rejected
+input avoids ASR compute but still pays verification/initialization costs.
+`benchmark_pipeline.py` measures one input and also accepts `--runs`/`--cache-mode`.
+Formatter-only evaluation and measurements are in [the formatting guide](punctuation.md#build-and-measurement).
+[Dated results](laptop-validation.md) include their hardware and measurement scope.
 
-The existing `benchmark_pipeline.py` also accepts `--runs` and `--cache-mode` for
-one input. Default remains five fresh processes with normal filesystem caches.
-
-## Real speech-admission regression (opt-in verified model, no microphone)
-
-With `MIKA_TEST_MODEL` configured, full CTest includes `speech-admission`:
-
-```sh
-ctest --test-dir build -R 'engine-unit|assets-unit|speech-admission|speech_assets' --output-on-failure
-```
-
-It requires rejection of nine deterministic synthetic silence/noise/tone inputs,
-admission of five public-file speech variants (including attenuation and pauses),
-and fail-closed missing/truncated/same-size wrong-hash VAD assets in raw/default
-mode. Damage tests modify only a temporary relocated probe/payload, never the
-original build or installed model. Model-free policy tests mock the ML outputs;
-real-model tests exercise the actual classifier. Neither establishes behavior on
-all music, noise, background speech or quiet human microphones. Attenuated-speech
-**admission is not transcription accuracy**; quiet ASR can still drop negations.
-Keep new field recordings separate and consented; do not tune only to public fixtures.
-
-## Actual launch-to-Listening (Linux only, opt-in microphone)
+## Microphone startup — Linux, explicit opt-in
 
 ```sh
 python3 scripts/benchmark_microphone.py --binary build/bin/mika \
@@ -92,87 +85,64 @@ python3 scripts/benchmark_microphone.py --binary build/bin/mika \
   --output build/microphone-report.json
 ```
 
-This explicitly opens the **default microphone**, observes the real CLI's first
-Listening status through a private PTY, briefly captures into memory, and presses
-Esc. It checks exit 130, no stdout, and restored terminal modes. It records the
-launch/observed-listening/cancellation timings and whole-child peak RSS via `wait4`.
-`audio_progress_observed` checks that the CLI's frame counter reached one second;
-that proves sample delivery, not correct input selection or intelligible audio.
-Audio is never saved/uploaded and no transcript is kept. At most 10 runs and 5
-seconds of post-Listening capture per run are accepted; each process has a timeout.
-The model must already be installed. A first-download prompt is declined.
-Optional `--cache-mode evict --model "$model"` requests the same best-effort file
-cache eviction; `--model` is **not** a CLI model-location override.
+This opens the default input, observes Listening/frame progress through a private
+PTY, then sends Esc. It checks exit 130, empty stdout and restored terminal modes;
+records launch/listening/cancellation timing and child peak RSS via `wait4`; and
+never saves audio or transcripts. Frame delivery is not proof of intelligibility.
 
-## Guided natural-prompt corpus (separate explicit save consent)
+The model must already exist; first-download consent is declined. Limits are ten
+runs and five seconds post-Listening per run, with process timeouts. Optional
+`--cache-mode evict --model "$model"` requests file-local cache eviction; this is
+not a runtime model override.
 
-For the easiest local Linux session after building the probe and installing the
-speech model, run:
+## Natural dictation — separate saved-audio consent
+
+The guided collector is a **Linux-only developer tool** requiring ffmpeg with
+PulseAudio support, a built inference probe and an existing verified model:
 
 ```sh
 python3 scripts/guided_validation.py --consent-save-audio
 ```
 
-It checks prerequisites/default input, asks before recording, creates a private
-Git-ignored session, offers playback/retakes for capture problems, then scores raw
-and formatted recognition locally. It does not upload audio or retain hypotheses
-in the report. `--probe PATH --model PATH` selects an explicit developer build and
-verified speech file; `--cases negation numbers hesitation` makes a short pilot.
-Keep a frozen probe/assets copy when comparing changes during a live session.
-Record once, then rerun evaluation against that same corpus rather than rerecording
-until recognition improves. The installed Mika command still never saves audio.
+It checks prerequisites/default input, asks before capture, creates an ignored
+private session, offers playback/retakes, then evaluates locally. `--probe PATH
+--model PATH` selects the comparison build and verified model; `--cases negation
+numbers hesitation` selects a pilot. Keep a frozen probe/assets copy to compare
+builds on the same recordings rather than rerecording until a result improves.
 
-[`tests/spoken_prompt_cases.json`](../tests/spoken_prompt_cases.json) contains 12
-predeclared prompts/references/checks: negations, constraints, numeric contrasts,
-versions, technical literals, conditional actions and spoken corrections. It is
-**not yet audio evidence**. Multiple accents/noise conditions require additional
-consented sessions and metadata; one speaker on one microphone cannot establish
-broad dictation accuracy. Do not synthesize speech and call it a human benchmark.
+The [12 predeclared prompts](../tests/spoken_prompt_cases.json) cover negations,
+constraints, numbers, versions, literals, conditions and corrections. Prompt text
+alone is not audio evidence. One speaker/input cannot establish accuracy across
+accents, noise or hardware. Do not label synthesized speech a human benchmark.
 
-The recorder below deliberately differs from Mika's no-saved-audio contract: it is
-an opt-in **developer collection tool** that saves private WAVs. It requires ffmpeg
-with PulseAudio input support and an interactive Linux terminal. Do not run it
-without the speaker's explicit consent. Use a new ignored `build-*` directory;
-never put recordings/transcripts in git or upload them as CI artifacts.
+For direct collection and evaluation:
 
 ```sh
 python3 scripts/record_spoken.py --consent-save-audio \
   --output-dir build-private-dictation/session-01
-# Optional: --review for playback/retakes, --cases negation numbers path;
-# --seconds 20 is the maximum per prompt
-```
-
-Read each prompt naturally after starting it; Enter ends the clip, with an
-automatic 20-second maximum (configurable up to 30). The manifest is fixed before
-recording. Owner-only permissions are used for new files. Existing corpora are
-never overwritten. Ctrl+C discards the unfinished clip and keeps accepted clips.
-Listen for capture/truncation problems **before** running recognition. The recorder
-warns if at least 1% of PCM samples hit the exact audio limits; this is a clipping
-indicator, not a speech/accuracy judgment. It never changes levels or audio. If
-needed, lower the system input level or move farther away before a capture retake;
-turning down an already clipped file cannot recover lost detail. A stopped
-session's manifest can include missing clips; evaluation rejects it explicitly.
-Choose a new directory for another session. Delete private corpora when finished.
-
-```sh
 python3 scripts/evaluate_spoken.py --probe build/bin/mika-inference-test \
   --model "$model" --manifest build-private-dictation/session-01/manifest.json \
   --output build-private-dictation/session-01/report.json
 ```
 
-The evaluator reads **only explicitly supplied paths**, runs raw and formatted
-inference, reports word error rate (WER), formatting preservation/fallback, and
-critical-phrase review flags. Case/punctuation-normalized WER is not sufficient
-for identifiers: separate literal checks retain internal punctuation and can be
-case-sensitive. Number-word/reference alternatives are predeclared, not added
-after seeing output. Literal flags can expose an inherent ASR limitation (e.g.
-spoken “underscore” not yielding `_`), not necessarily a formatter regression.
-Critical checks are conservative exact-phrase checks, **not a semantic judge**.
-Review meaningful errors manually, including punctuation that changes intent.
+Unlike installed Mika, this collector **saves private WAVs**. Obtain explicit
+speaker consent first. New files use owner-only permissions; existing corpora are
+never overwritten. Enter ends a take, with a default 20-second maximum; Ctrl+C
+discards the unfinished take. Optional `--review` offers playback/retakes.
 
-Reports omit transcripts by default. `--include-transcripts` explicitly saves
-reference/hypothesis text and must only be used in a private ignored location.
-Reports still contain case IDs, audio hashes and system metadata; treat them as
-private unless reviewed. Pipeline failures are reported separately, not silently
-scored as successful empty transcripts. WER is micro-averaged over scored cases,
-and can exceed 100% with insertions. Missing cases/failures must accompany scores.
+Listen for capture problems before recognition. A warning at 1% exact-limit PCM
+samples indicates possible clipping, not recognition accuracy. Neither waveform
+nor OS settings are changed. Lowering an already clipped file cannot restore it.
+Incomplete manifests fail evaluation rather than silently omitting cases.
+
+The evaluator reports micro-averaged WER, preservation/fallback, failures and
+critical-phrase flags. WER can exceed 100% through insertions. Literal checks retain
+internal punctuation/case; critical checks are exact-phrase flags, not semantic
+judgments. Number/reference alternatives must be predeclared, not added after
+seeing hypotheses. Review meaning-changing errors separately.
+
+Reports omit transcripts by default. `--include-transcripts` explicitly saves them;
+case IDs, audio hashes and system metadata remain private even without hypotheses.
+Never commit/upload recordings, transcripts or private reports to Git, CI, releases
+or delegated review. Retain/delete recordings according to the speaker's consent;
+never remove an existing corpus merely to clean a build directory.

@@ -25,13 +25,29 @@ class Metadata(unittest.TestCase):
         mac = workflow.split('  macos-cpu:', 1)[1].split('  uninstallers:', 1)[0]
         self.assertIn('name: mika-macos-arm64', mac)
         publish = workflow.split('  release:', 1)[1]
-        self.assertIn('needs: [uninstallers, model-free, package, macos-cpu]', publish)
+        self.assertIn('needs: [uninstallers, model-free, package, macos-cpu, release-assets]', publish)
+        preflight = workflow.split('  release-assets:', 1)[1].split('  release:', 1)[0]
+        for required in ('needs: [package, macos-cpu]', 'pattern: mika-*',
+                         'merge-multiple: true', 'scripts/check_release_assets.py --directory dist'):
+            self.assertIn(required, preflight)
+        self.assertNotIn('gh release', preflight)
+        self.assertNotIn('contents: write', preflight)
         self.assertIn('pattern: mika-*', publish)
         self.assertIn('scripts/check_release_assets.py --directory dist', publish)
         self.assertIn('--verify-tag --draft', publish)
         self.assertIn('--draft=false --latest', publish)
         version = json.loads((ROOT / 'vcpkg.json').read_text(encoding='utf-8'))['version-string']
         self.assertIn('Mika v' + version, (ROOT / '.github/release-notes.md').read_text(encoding='utf-8'))
+
+    def test_ci_actions_remain_pinned_without_persisted_checkout_credentials(self):
+        workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        actions = re.findall(r'^\s+- uses: (\S+)', workflow, re.M)
+        self.assertTrue(actions)
+        for action in actions:
+            self.assertRegex(action, r'^actions/[a-z/-]+@[0-9a-f]{40}$')
+        checkouts = [action for action in actions if action.startswith('actions/checkout@')]
+        ephemeral = re.findall(r'- uses: actions/checkout@[^\n]+\n\s+with:\n\s+persist-credentials: false', workflow)
+        self.assertEqual(len(ephemeral), len(checkouts))
 
     def test_model_free_ci_keeps_sanitizer_coverage(self):
         workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')

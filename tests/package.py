@@ -11,10 +11,15 @@ import unittest
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from fetch_punctuation import ARTIFACTS
+
+NOTICE_FILES = (set(ARTIFACTS) - {'sp.model'}) | {'fullstop-LICENSE.txt', 'fullstop-NOTICE.txt'}
 
 
 class Package(unittest.TestCase):
-    def build(self, platform, extra=None, missing=None, change_speech=None, change_punctuation=None):
+    def build(self, platform, extra=None, missing=None, change_speech=None, change_punctuation=None,
+              change_binary=None):
         temporary = tempfile.TemporaryDirectory(prefix='Mika package ü ')
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -22,7 +27,8 @@ class Package(unittest.TestCase):
         binary = stage / 'bin'
         payload = binary / 'punctuation'
         (payload / 'licenses').mkdir(parents=True)
-        (payload / 'licenses/NOTICE.txt').write_text('test notice')
+        for name in NOTICE_FILES:
+            (payload / 'licenses' / name).write_text('test notice')
         windows = platform == 'windows'
         (binary / ('mika.exe' if windows else 'mika')).write_bytes(b'app')
         (binary / 'mika-inference-test').write_bytes(b'must not ship')
@@ -46,6 +52,8 @@ class Package(unittest.TestCase):
             change_speech(speech)
         if change_punctuation:
             change_punctuation(payload)
+        if change_binary:
+            change_binary(binary)
         result = subprocess.run([sys.executable, ROOT / 'scripts/package.py', '--stage', stage,
                                  '--output', root / 'dist', '--platform', platform, '--version', 'vtest'],
                                 capture_output=True, timeout=30)
@@ -67,7 +75,9 @@ class Package(unittest.TestCase):
                     version = bundle.read('mika/VERSION')
             self.assertEqual(version, b'vtest\n')
             self.assertIn('mika/bin/punctuation/model.int8.onnx', names)
-            self.assertIn('mika/bin/punctuation/licenses/NOTICE.txt', names)
+            self.assertEqual({name.removeprefix('mika/bin/punctuation/licenses/') for name in names
+                              if name.startswith('mika/bin/punctuation/licenses/') and not name.endswith('/licenses')},
+                             NOTICE_FILES)
             self.assertIn('mika/bin/speech/LICENSE.txt', names)
             self.assertEqual([name for name in names if name.endswith('.gguf')],
                              ['mika/bin/speech/silero-vad-v6.2-F32.gguf'])
@@ -76,6 +86,86 @@ class Package(unittest.TestCase):
                 self.assertIn('mika/lib/libggml-cpu-test.so', names)
             self.assertEqual(Path(str(archive) + '.sha256').read_text().split()[0],
                              hashlib.sha256(archive.read_bytes()).hexdigest())
+
+    def test_missing_or_empty_formatter_notices_are_rejected(self):
+        for name in sorted(NOTICE_FILES):
+            with self.subTest(missing=name):
+                result, archive = self.build('linux', change_punctuation=lambda payload:
+                                             (payload / 'licenses' / name).unlink())
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(archive.exists())
+        for platform in ('linux', 'windows', 'macos'):
+            for empty_directory in (False, True):
+                with self.subTest(platform=platform, empty_directory=empty_directory):
+                    def change(payload):
+                        if empty_directory:
+                            for path in (payload / 'licenses').iterdir():
+                                path.unlink()
+                        else:
+                            (payload / 'licenses/fullstop-LICENSE.txt').write_bytes(b'')
+                    result, archive = self.build(platform, change_punctuation=change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+
+    def test_unexpected_text_in_notices_is_rejected(self):
+        result, archive = self.build('linux', extra='licenses/private-transcript.txt')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(archive.exists())
+
+    def test_linked_main_binary_or_bin_directory_is_rejected(self):
+        for platform in ('linux', 'windows', 'macos'):
+            for directory in (False, True):
+                with self.subTest(platform=platform, directory=directory):
+                    def change(binary):
+                        item = binary if directory else binary / ('mika.exe' if platform == 'windows' else 'mika')
+                        target = binary.parent / 'linked-target'
+                        item.rename(target)
+                        try:
+                            item.symlink_to(target, target_is_directory=directory)
+                        except (OSError, NotImplementedError) as error:
+                            self.skipTest(str(error))
+                    result, archive = self.build(platform, change_binary=change)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(archive.exists())
+
+    def test_linked_library_inputs_are_rejected(self):
+        for platform, name in (('linux', '../lib'), ('windows', 'dependency.dll')):
+            with self.subTest(platform=platform):
+                def change(binary):
+                    item = binary / name
+                    if not item.exists():
+                        item.write_bytes(b'test dependency')
+                    target = binary.parent / 'linked-library'
+                    item.rename(target)
+                    try:
+                        item.symlink_to(target, target_is_directory=platform == 'linux')
+                    except (OSError, NotImplementedError) as error:
+                        self.skipTest(str(error))
+                result, archive = self.build(platform, change_binary=change)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(archive.exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows directory junctions')
+    def test_junction_payload_roots_are_rejected(self):
+        for name in ('', 'punctuation', 'punctuation/licenses', 'speech'):
+            with self.subTest(junction=name):
+                def change(binary):
+                    item = binary / name
+                    target = binary.parent / 'junction-target'
+                    item.rename(target)
+                    subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(item), str(target)],
+                                   check=True, capture_output=True, timeout=10)
+                result, archive = self.build('windows', change_binary=change)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(archive.exists())
+
+    def test_empty_runtime_files_are_rejected(self):
+        for name in ('mika', 'punctuation/model.int8.onnx', 'speech/silero-vad-v6.2-F32.gguf',
+                     'speech/LICENSE.txt'):
+            with self.subTest(empty=name):
+                result, archive = self.build('linux', change_binary=lambda binary: (binary / name).write_bytes(b''))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(archive.exists())
 
     def test_incomplete_payload_is_rejected(self):
         for platform in ('linux', 'windows', 'macos'):
@@ -91,7 +181,7 @@ class Package(unittest.TestCase):
 
     def test_linked_formatter_payload_members_and_notices_are_rejected(self):
         for platform in ('linux', 'windows', 'macos'):
-            for name in (None, 'model.int8.onnx', 'sp.model', 'licenses', 'licenses/NOTICE.txt'):
+            for name in (None, 'model.int8.onnx', 'sp.model', 'licenses', 'licenses/fullstop-NOTICE.txt'):
                 with self.subTest(platform=platform, name=name):
                     def change(payload):
                         item = payload / name if name else payload

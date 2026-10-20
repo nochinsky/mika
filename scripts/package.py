@@ -6,6 +6,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
+from fetch_punctuation import ARTIFACTS
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
@@ -17,16 +18,32 @@ args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 source = Path(__file__).resolve().parents[1]
 
+
+def linked(path):
+    return path.is_symlink() or path.is_junction()
+
+
+def payload_file(path):
+    return not linked(path) and path.is_file() and path.stat().st_size > 0
+
+
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary) / 'mika'
     (root / 'bin').mkdir(parents=True)
     executable = 'mika.exe' if args.platform == 'windows' else 'mika'
-    for binary in (args.stage / 'bin').iterdir():
+    binary_dir = args.stage / 'bin'
+    if linked(binary_dir) or not binary_dir.is_dir():
+        raise SystemExit('Missing or linked installed binary directory')
+    for binary in binary_dir.iterdir():
         if binary.name == executable or (args.platform == 'windows' and binary.suffix.lower() == '.dll'):
+            if not payload_file(binary):
+                raise SystemExit('Empty, linked or non-regular installed binary: ' + binary.name)
             shutil.copy2(binary, root / 'bin' / binary.name)
     if not (root / 'bin' / executable).is_file():
         raise SystemExit('Missing Mika executable in install staging directory')
     if args.platform == 'linux':
+        if linked(args.stage / 'lib') or not (args.stage / 'lib').is_dir():
+            raise SystemExit('Missing or linked installed library directory')
         (root / 'lib').mkdir()
         for library in (args.stage / 'lib').glob('*.so*'):
             shutil.copy2(library, root / 'lib' / library.name, follow_symlinks=False)
@@ -41,25 +58,28 @@ with tempfile.TemporaryDirectory() as temporary:
         {'libmika-fullstop.dylib', 'libonnxruntime.dylib'} if args.platform == 'macos' else
         {'libmika-fullstop.so', 'libonnxruntime.so'})
     notices = punctuation / 'licenses'
-    if punctuation.is_symlink() or not punctuation.is_dir() or notices.is_symlink() or not notices.is_dir():
+    if linked(punctuation) or not punctuation.is_dir() or linked(notices) or not notices.is_dir():
         raise SystemExit('Missing or linked installed formatting payload/notices')
     # Never dereference a staged link into unrelated/private build-machine data.
     entries = list(punctuation.iterdir())
     if ({item.name for item in entries} != required | {'licenses'} or
-            any(item.is_symlink() or not item.is_file() for item in entries if item.name != 'licenses')):
+            any(not payload_file(item) for item in entries if item.name != 'licenses')):
         raise SystemExit('Incomplete, linked or unexpected files in formatting payload')
-    if any(not item.is_file() or item.is_symlink() or item.suffix not in {'.txt', '.md', '.yaml'}
-           for item in (punctuation / 'licenses').iterdir()):
-        raise SystemExit('Unexpected files in formatting notices')
+    # Use the pinned preparation inventory, without fetching or converting.
+    # Legal/provenance text is mandatory; a .txt extension is not a safe allowlist.
+    required_notices = (set(ARTIFACTS) - {'sp.model'}) | {'fullstop-LICENSE.txt', 'fullstop-NOTICE.txt'}
+    if ({item.name for item in notices.iterdir()} != required_notices or
+            any(not payload_file(item) for item in notices.iterdir())):
+        raise SystemExit('Missing, empty, linked or unexpected formatting notices')
     shutil.copytree(punctuation, root / 'bin' / 'punctuation')
     # The CPU VAD is mandatory even in raw mode. Package only the fixed,
     # build-verified asset and its notice, never ASR caches or private audio.
     speech = args.stage / 'bin' / 'speech'
     speech_required = {'silero-vad-v6.2-F32.gguf', 'LICENSE.txt'}
-    if speech.is_symlink() or not speech.is_dir():
+    if linked(speech) or not speech.is_dir():
         raise SystemExit('Missing or linked installed speech payload')
     if ({item.name for item in speech.iterdir()} != speech_required or
-            any(item.is_symlink() or not item.is_file() for item in speech.iterdir())):
+            any(not payload_file(item) for item in speech.iterdir())):
         raise SystemExit('Incomplete or unexpected files in speech payload')
     shutil.copytree(speech, root / 'bin' / 'speech')
     for filename in ['LICENSE', 'README.md', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md']:

@@ -100,7 +100,9 @@ Handled preparation/publication failures retain the previous payload; failed
 rollback retains its recovery directory. This is a single-writer build-cache
 contract, not crash-atomic or concurrent-writer recovery. Forced termination can
 leave scratch/recovery directories. Packaging requires exact formatter/speech
-members and rejects linked payloads rather than following them into unrelated data.
+members and their complete formatter notice inventory. Main binaries and payload
+file members must be nonempty regular files. Linked roots, symlinks and Windows
+junctions are rejected rather than followed into unrelated data.
 Platform installers remain self-contained for stock shell/PowerShell availability;
 their behavior is tested separately rather than hidden behind a cross-platform framework.
 
@@ -110,6 +112,8 @@ their behavior is tested separately rather than hidden behind a cross-platform f
   local HTTPS, installer/package transactions and sanitizers. No ML fetch or capture.
 - **Native:** real backend/formatter, public speech, five-minute processing,
   admission/integrity failures and installed/relocated execution on all platforms.
+  A non-publishing CI preflight downloads the three platform archives together and
+  checks all six release files; tag publication remains separately gated.
 - **Hardware:** separately consented microphone capture, permissions, trust,
   natural speech and live timings. Hosted CI does not establish these.
 

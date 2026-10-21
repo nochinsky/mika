@@ -1,7 +1,9 @@
 # Mika
 
-Offline English dictation for **Mac, Linux and Windows**.
+Offline dictation for **Mac, Linux and Windows**.
 Run `mika`, speak, press **Enter**, and get text in your terminal.
+
+**English only.** Other languages are not currently supported.
 
 No account, cloud processing, background service or clipboard access.
 
@@ -48,6 +50,15 @@ mika
 Speak after **Listening**, then press **Enter** to finish. **Esc / Ctrl+C** cancels.
 Mika uses your system's default microphone and limits each recording to five minutes.
 Punctuation and capitalization are automatic; `mika --raw` skips formatting.
+
+For example, say **“please review the changes before merging”**, then press **Enter**.
+Mika prints the transcript and exits:
+
+```text
+Please review the changes before merging.
+```
+
+This is illustrative output; recognition and punctuation can vary.
 
 Only the transcript goes to stdout. To save it:
 

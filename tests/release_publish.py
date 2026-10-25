@@ -32,8 +32,13 @@ class Publication(unittest.TestCase):
             'gh': '''#!/usr/bin/env bash
 printf '%s\\n' "$*" >> calls.log
 if [[ "$1 $2" == 'api repos/fixture/mika/git/ref/tags/v0.3.2' ]]; then
-  [[ -n "${EXISTING_TAG:-}" ]] || exit 1
+  if [[ -z "${EXISTING_TAG:-}" ]]; then
+    printf '%s\\n' '{"message":"Not Found","status":"404"}'
+    exit 1
+  fi
   printf '%s\\n' "$EXISTING_TAG"
+elif [[ "$1 $2 $3" == 'api --method POST' ]]; then
+  exit "${FAIL_TAG_CREATE:-0}"
 elif [[ "$1 $2" == 'release view' ]]; then
   printf '%s\\n' "${UPLOADED_ASSETS:-6}"
 fi
@@ -46,7 +51,7 @@ fi
                'GITHUB_REF': 'refs/heads/main', 'GITHUB_REF_NAME': 'main',
                'GITHUB_REPOSITORY': 'fixture/mika', 'GITHUB_SHA': 'a' * 40,
                'GH_TOKEN': 'unused-test-token', 'EXISTING_TAG': '',
-               'FAIL_PREFLIGHT': '0', 'UPLOADED_ASSETS': '6', **changes}
+               'FAIL_PREFLIGHT': '0', 'FAIL_TAG_CREATE': '0', 'UPLOADED_ASSETS': '6', **changes}
         result = subprocess.run([BASH, '--noprofile', '--norc', '-e', '-o', 'pipefail',
                                  '-c', 'export PATH="$PWD/fake-bin:$PATH"\n' + script],
                                 cwd=base, env=env, capture_output=True, text=True, timeout=20)
@@ -64,6 +69,12 @@ fi
         result, calls = self.publish(EXISTING_TAG='a' * 40)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('--method POST', calls)
+
+    def test_tag_creation_failure_prevents_release_writes(self):
+        result, calls = self.publish(FAIL_TAG_CREATE='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('--method POST', calls)
+        self.assertNotIn('release create', calls)
 
     def test_conflicting_tag_stops_before_release(self):
         result, calls = self.publish(EXISTING_TAG='b' * 40)

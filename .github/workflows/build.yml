@@ -355,9 +355,11 @@ jobs:
             test "$GITHUB_REF" = refs/heads/main
             # Create an immutable lightweight tag at this fully tested commit.
             # GITHUB_TOKEN tag creation does not start another workflow run.
-            existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$version" --jq .object.sha 2>/dev/null || true)
+            if ! existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$version" --jq .object.sha 2>/dev/null); then
+              existing=''
+            fi
             if [[ -n "$existing" ]]; then
-              test "$existing" = "$GITHUB_SHA"
+              test "$existing" = "$GITHUB_SHA" || { printf 'Release tag points to another commit\n' >&2; exit 1; }
             else
               gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
                 -f ref="refs/tags/$version" -f sha="$GITHUB_SHA" >/dev/null

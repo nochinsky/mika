@@ -125,6 +125,13 @@ For a release:
    versions/hashes, uploads to a draft and makes it public/latest only after all
    six assets are uploaded.
 
+Maintainers can also use **Actions → Build and test → Run workflow**, select
+`main`, and enable **publish_release**. The same native jobs and release gates
+run before the publisher creates the source version's tag at the tested commit
+and publishes all six assets. The option defaults to false; ordinary manual
+runs remain validation-only. Existing tags must already point to that exact
+commit and are never moved. No local Git credentials are required for this route.
+
 Mac remains experimental pending [hardware acceptance](docs/macos.md#validation-status).
 Ad-hoc CI signing is not Developer ID signing or notarization. Dependency/model
 updates must pin identities, preserve licenses and modification notices, reproduce

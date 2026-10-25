@@ -25,6 +25,8 @@ English dictation CLI.
   and incomplete formatter notice inventories when packaging.
 - Validate all three platform archives, their checksums and embedded versions
   together on ordinary CI runs before the separately gated tag publication.
+- Allow maintainers to publish from an explicit main-branch workflow run after
+  the same complete checks, without local Git credentials or rewriting tags.
 - Expand terminal, download, packaging and asset-preparation regressions and
   clarify usage, validation and platform documentation.
 

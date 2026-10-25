@@ -36,6 +36,13 @@ class Metadata(unittest.TestCase):
         self.assertIn('scripts/check_release_assets.py --directory dist', publish)
         self.assertIn('--verify-tag --draft', publish)
         self.assertIn('--draft=false --latest', publish)
+        dispatch = workflow.split('  workflow_dispatch:', 1)[1].split('\npermissions:', 1)[0]
+        for required in ('publish_release:', 'type: boolean', 'default: false'):
+            self.assertIn(required, dispatch)
+        for required in ("github.event_name == 'workflow_dispatch'",
+                         "github.ref == 'refs/heads/main' && inputs.publish_release",
+                         'group: mika-release', 'cancel-in-progress: false'):
+            self.assertIn(required, publish)
         version = json.loads((ROOT / 'vcpkg.json').read_text(encoding='utf-8'))['version-string']
         self.assertIn('Mika v' + version, (ROOT / '.github/release-notes.md').read_text(encoding='utf-8'))
 

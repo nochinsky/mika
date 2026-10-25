@@ -190,7 +190,7 @@ if(BUILD_TESTING)
     mika_warnings(mika-audio-devices)
 
     if(Python3_Interpreter_FOUND)
-        foreach(test IN ITEMS spoken_evaluation benchmark_tools speech_assets release_assets)
+        foreach(test IN ITEMS spoken_evaluation benchmark_tools speech_assets release_assets release_publish)
             add_test(NAME ${test} COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${test}.py")
             set_tests_properties(${test} PROPERTIES TIMEOUT 30)
         endforeach()

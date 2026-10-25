@@ -61,7 +61,7 @@ add_test(NAME cli COMMAND "${Python3_EXECUTABLE}" "${MIKA_ROOT}/tests/cli.py"
     "$<TARGET_FILE:mika-cli-model-test>" "$<TARGET_FILE:mika-cli-fixture>")
 add_test(NAME download COMMAND "${Python3_EXECUTABLE}" "${MIKA_ROOT}/tests/download.py"
     "$<TARGET_FILE:mika-download-test>")
-foreach(test IN ITEMS metadata package punctuation_evaluation punctuation_fetch spoken_evaluation benchmark_tools speech_assets release_assets)
+foreach(test IN ITEMS metadata package punctuation_evaluation punctuation_fetch spoken_evaluation benchmark_tools speech_assets release_assets release_publish)
     add_test(NAME ${test} COMMAND "${Python3_EXECUTABLE}" "${MIKA_ROOT}/tests/${test}.py")
 endforeach()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -35,8 +35,8 @@ Missing/damaged speech-detection data returns exit 1; reinstall rather than bypa
 
 Formatting preserves recognized words/order and obvious literals. Unsupported text,
 load failures and rejected formatting keep the raw transcript with a warning.
-Current source also identifies loader failures with a bounded escaped native error
-on stderr; these can contain local paths, not dictated text. v0.3.1 reports only
+Since v0.3.2, loader failures include a bounded escaped native error on stderr;
+these can contain local paths, not dictated text. Earlier releases report only
 the generic runtime warning. See [formatting behavior](punctuation.md).
 
 Neither speech admission nor exit 0 guarantees the intended speaker, accurate
@@ -57,7 +57,7 @@ Formatting and VAD data are bundled and replaced with the app.
 
 | Variable | Purpose |
 | --- | --- |
-| `MIKA_VERSION` | Select a release tag, such as `v0.3.1`, instead of latest. |
+| `MIKA_VERSION` | Select a release tag, such as `v0.3.2`, instead of latest. |
 | `MIKA_REINSTALL=1` | Force app reinstallation, retaining the speech model. |
 | `MIKA_ARCHIVE_PATH` | Use a local platform archive and adjacent `.sha256`. |
 
@@ -150,7 +150,7 @@ Developer recording tools require separate explicit consent.
 | **3** | No detected speech or empty recognition | Empty |
 | **130** | Cancellation or declined model download | Empty |
 
-A formatting fallback remains success. In current source (not v0.3.1), detected
+A formatting fallback remains success. Since v0.3.2, detected
 terminal read failures return 1 rather than cancellation, and broken pipes do not
 bypass terminal cleanup. Failed transcript writes return 1. Check the exit status,
 not just output bytes: an output-device failure can occur after writing begins.

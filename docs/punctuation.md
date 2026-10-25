@@ -39,10 +39,10 @@ size and SHA-256 are verified. Modules load from the executable's sibling
 failures preserve raw text with a stderr warning. Cancellation prints no transcript.
 Native crashes, aborts and OS termination cannot be recovered in-process.
 
-Current source adds a caller-owned, bounded loader diagnostic naming the library
+Since v0.3.2, a caller-owned, bounded loader diagnostic names the library
 or missing export, with POSIX loader text or a Windows error code. Controls and
 non-ASCII bytes are escaped; local OS paths may appear. Dictated text and inference
-exception messages are not included. This is not in the v0.3.1 binary. On Mac,
+exception messages are not included. Earlier releases use a generic warning. On Mac,
 [security approval](macos.md#first-run-security-approval) is one possible cause of a
 load failure; missing/damaged files need repair instead.
 

@@ -64,11 +64,11 @@ Approval is normally remembered for the approved copy. A replacement or update
 can require approval again. Mika does not disable Gatekeeper, strip quarantine,
 change security policy or approve code automatically.
 
-Current source identifies the failing library/export and reports a bounded native
+Since v0.3.2, Mika identifies the failing library/export and reports a bounded native
 loader error on stderr; Windows uses the native error code. Diagnostic controls
 and non-ASCII bytes are escaped. Messages can contain local filesystem paths, but
 never dictated text or inference exception contents. Review paths before sharing
-logs. These diagnostics require a build containing the change; v0.3.1 has only the
+logs. These diagnostics are available since v0.3.2; earlier releases have only the
 generic runtime warning. Missing/damaged libraries require repair, not security
 approval; damaged speech-detection data remains a hard error even with `--raw`.
 

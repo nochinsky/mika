@@ -36,7 +36,9 @@ jobs:
           python-version: '3.12'
       - name: Native stock-Bash installer/removal fixture preflight
         timeout-minutes: 3
-        run: python tests/macos_scripts.py
+        run: |
+          python tests/macos_scripts.py
+          python tests/release_publish.py
       - name: Install pinned build-only conversion tools
         run: python -m pip install -r scripts/requirements-punctuation.txt
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -347,7 +349,7 @@ jobs:
         shell: bash
         run: |
           version=$(sed -n 's/^project(mika VERSION \([^ ]*\).*/v\1/p' CMakeLists.txt)
-          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'Invalid release version\n' >&2; exit 1; }
           python3 scripts/check_release_assets.py --directory dist --version "$version"
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
             test "$GITHUB_REF" = refs/heads/main

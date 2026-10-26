@@ -1,0 +1,1 @@
+Do not delete the backup. Use fifteen workers, not fifty. Keep the port at eight thousand and eighty. Wait until I approve before publishing. Do not change the implementation. The timeout is three hundred seconds. Only change the tests. Never upload the recording. Keep the old version until the new build passes. Do not remove the config file.

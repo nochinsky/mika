@@ -1,0 +1,40 @@
+name: Continuous-session experiment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'experiments/continuous/**'
+      - '.github/workflows/continuous-experiment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  segmenter:
+    name: Native segmenter (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure C17 segmenter
+        run: cmake -S experiments/continuous -B build-continuous -DCMAKE_BUILD_TYPE=Release
+      - name: Build C17 segmenter
+        run: cmake --build build-continuous --config Release --parallel 2
+      - name: Check every sample and boundary in synthetic PCM
+        run: ctest --test-dir build-continuous -C Release --output-on-failure --no-tests=error
+      - name: Check Linux address and undefined behavior sanitizers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cmake -S experiments/continuous -B build-sanitized -DCMAKE_BUILD_TYPE=Debug \
+            '-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer'
+          cmake --build build-sanitized --parallel 2
+          ctest --test-dir build-sanitized --output-on-failure --no-tests=error

@@ -46,6 +46,6 @@ def cache_files(binary, model, sample=None):
     files = [binary, Path(model).resolve()]
     if sample is not None:
         files.append(Path(sample).resolve())
-    assets = binary.parent / 'punctuation'
-    files.extend(p for p in assets.rglob('*') if p.is_file())
+    for payload in ('speech', 'punctuation'):
+        files.extend(p for p in (binary.parent / payload).rglob('*') if p.is_file())
     return files

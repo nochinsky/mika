@@ -49,6 +49,18 @@ class BenchmarkTools(unittest.TestCase):
                 self.assertEqual(advise.call_args.args[1:], (0, 0, os.POSIX_FADV_DONTNEED))
             self.assertEqual(path.read_bytes(), b'public')
 
+    def test_eviction_covers_bundled_speech_and_formatting_assets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary, model, sample = root / 'mika', root / 'model.gguf', root / 'sample.wav'
+            speech = root / 'speech' / 'silero-vad-v6.2-F32.gguf'
+            punctuation = root / 'punctuation' / 'model.int8.onnx'
+            for path in (binary, model, sample, speech, punctuation):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'offline fixture')
+            files = benchmark_common.cache_files(binary, model, sample)
+            self.assertEqual(set(files), {binary, model, sample, speech, punctuation})
+
     @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux microphone benchmark')
     def test_microphone_requires_explicit_opt_in(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -64,8 +64,23 @@ try {
         $installLock = [IO.File]::Open((Join-Path $parent '.installer.lock'), [IO.FileMode]::OpenOrCreate,
                                      [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     } catch { throw 'Another Mika installer may be running, or the install directory is not writable.' }
-    if ((Test-Path -LiteralPath $root) -and -not (Test-Path -LiteralPath (Join-Path $root 'VERSION'))) {
-        throw "Refusing to replace an unrelated directory: $root"
+    if (Test-Path -LiteralPath $root) {
+        $existing = Get-Item -LiteralPath $root -Force
+        if (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to replace a linked or non-directory application path: $root"
+        }
+        foreach ($name in @('VERSION', 'ARCHIVE_SHA256')) {
+            $marker = Get-Item -LiteralPath (Join-Path $root $name) -Force -ErrorAction SilentlyContinue
+            if ($null -eq $marker -or $marker.PSIsContainer -or $marker.Length -gt 256 -or
+                ($marker.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Refusing to replace an unrelated directory: $root"
+            }
+        }
+        $existingVersion = [IO.File]::ReadAllText((Join-Path $root 'VERSION')).Trim()
+        $existingHash = [IO.File]::ReadAllText((Join-Path $root 'ARCHIVE_SHA256')).Trim()
+        if ($existingVersion -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $existingHash -notmatch '^[a-fA-F0-9]{64}$') {
+            throw "Invalid installation markers; refusing to replace $root"
+        }
     }
     $work = Join-Path $parent ('.install-' + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $work)

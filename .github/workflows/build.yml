@@ -2,7 +2,7 @@ name: Build and test
 
 on:
   push:
-    branches: [main, feat/macos-cpu, feat/readiness]
+    branches: [main, feat/macos-cpu, feat/readiness, 'codex/**']
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -183,10 +183,12 @@ jobs:
           path: .vcpkg-cache
           key: deps-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: deps-${{ runner.os }}-
-      - name: Windows PowerShell installer transport
+      - name: Windows PowerShell installer state and transport
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/installer_state_windows.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/installer_windows.ps1
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Bootstrap pinned vcpkg (Linux)

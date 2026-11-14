@@ -20,7 +20,7 @@ permissions:
 jobs:
   macos-cpu:
     name: Experimental macOS ARM64 CPU
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache

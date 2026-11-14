@@ -51,7 +51,7 @@ class BenchmarkTools(unittest.TestCase):
 
     def test_eviction_covers_bundled_speech_and_formatting_assets(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             binary, model, sample = root / 'mika', root / 'model.gguf', root / 'sample.wav'
             speech = root / 'speech' / 'silero-vad-v6.2-F32.gguf'
             punctuation = root / 'punctuation' / 'model.int8.onnx'

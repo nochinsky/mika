@@ -1,74 +1,98 @@
 # Usage and troubleshooting
 
-For installation, updates and removal commands, start with the [README](../README.md).
-Mac first-run security approval is covered in [Mac support](macos.md#first-run-security-approval).
+Install, update and uninstall commands are in the [README](../README.md). If you're
+on a Mac and it won't open, start with [Mac first-run approval](macos.md#first-run-security-approval).
 
-## Recording and output
+## Recording
 
-Run `mika`, speak after **Listening**, and press **Enter** to finish. Esc/Ctrl+C
-cancels. The recording limit is five minutes; pauses do not automatically finish
-recording. A controlling terminal is required even when stdout is redirected.
-SSH does not forward a microphone automatically.
+Run `mika`, wait for **Listening**, talk, and press **Enter**. **Esc** or **Ctrl+C**
+cancels without printing anything.
 
-Choose the default input in your OS sound settings:
+Recording only stops when you press Enter. Pausing won't end it. The one exception
+is the five-minute limit: when you reach it, Mika stops and transcribes what it has.
 
-- **Mac:** allow your terminal under Privacy & Security → Microphone.
-- **Linux:** ensure your ALSA/PulseAudio-compatible input works. PipeWire systems
-  need the usual PulseAudio compatibility service and `libpulse` where used.
-- **Windows:** enable microphone access for desktop apps.
+Mika needs a real terminal to read your keypresses, even when you redirect its
+output. Over SSH, keep in mind that your microphone isn't forwarded to the remote
+machine.
 
-Mika does not select a different input or change OS sound settings. Linux under
-WSL also requires working host/WSLg audio routing and Windows permissions; a device
-listing alone does not prove capture.
+## Microphone problems
 
-`mika --help` lists controls and the model path. `mika --version` shows the installed
-version. Only the transcript goes to stdout; status and errors go to stderr.
-Routine status is omitted when stderr is redirected. Cancellation during synchronous
-loading/inference may wait for it to return, but never prints a partial transcript.
+Mika always records from your system's default input. To use a different mic,
+change the default in your OS settings. Mika won't change any sound settings itself.
+
+- **Mac:** allow your terminal app under System Settings → Privacy & Security → Microphone.
+- **Linux:** your input needs to work through ALSA or PulseAudio. On PipeWire, that
+  means having the PulseAudio compatibility layer running (and `libpulse` installed
+  where needed).
+- **Windows:** turn on microphone access for desktop apps in Privacy settings.
+- **WSL:** audio has to make it from Windows into WSL (WSLg handles this) and Windows
+  has to allow microphone access. Seeing the device listed doesn't mean capture works.
+
+If Mika says *no audio is arriving from the microphone*, it got no sound at all
+for five seconds. That almost always means the wrong default device or a missing
+permission.
+
+## Output
+
+Only the transcript goes to stdout. Status lines and errors go to stderr, and the
+status lines are hidden when stderr is redirected.
+
+`mika --help` shows the controls and where the model is stored.
+`mika --version` shows the installed version.
+
+If you cancel while Mika is loading the model or transcribing, it finishes that step
+before quitting, which can take a moment. You never get a partial transcript.
 
 ## Recognition and formatting
 
-Recognition is English-only. `--raw` skips punctuation/capitalization, not speech
-admission. A mandatory CPU classifier checks the whole recording before ASR without
-trimming, rescaling or automatically stopping it. No detected speech returns exit 3.
-Missing/damaged speech-detection data returns exit 1; reinstall rather than bypass it.
+Before transcribing, Mika runs a small speech detector over the whole recording. If
+it hears no speech, you get exit code 3 and no text. The detector doesn't cut or
+change your audio. It only decides whether to go ahead. `--raw` doesn't skip it.
+If the detector's data is missing or damaged, Mika stops with exit 1. Reinstall to fix it.
 
-Formatting preserves recognized words/order and obvious literals. Unsupported text,
-load failures and rejected formatting keep the raw transcript with a warning.
-Since v0.3.2, loader failures include a bounded escaped native error on stderr;
-these can contain local paths, not dictated text. Earlier releases report only
-the generic runtime warning. See [formatting behavior](punctuation.md).
+After transcription, Mika adds punctuation and capitals. This step only adds
+punctuation and capitals. It doesn't fix misheard words, change word order or
+"correct" things like file names and numbers. If formatting fails or produces
+something suspicious, you get the raw transcript and a warning on stderr. Since
+v0.3.2 that warning can include the underlying error message, which may contain
+file paths (never your dictated text). More detail is in
+[how formatting works](punctuation.md).
 
-Neither speech admission nor exit 0 guarantees the intended speaker, accurate
-recognition or preserved meaning. Review commands, identifiers, versions, numbers
-and negations. There are no partial transcripts, translation, diarization or history.
+What Mika doesn't do: translation, speaker labels, live partial results or history.
+
+It also can't promise it heard you correctly. A successful run means it produced
+text, not that the text is right. Read it over, especially names, numbers, versions,
+negations ("can" vs "can't") and anything you're about to run.
 
 ## Updating and repairing
 
-Close Mika and rerun the platform installer from the README. It checks the latest
-release, keeps the separate speech model, and repairs command/PATH setup. Matching
-archive identity and successful startup skip replacement; this is not a full
-integrity scan of every installed file. Force repair with `MIKA_REINSTALL=1`.
+Close Mika and run the install command from the README again. It fetches the latest
+release, keeps your downloaded model, and fixes the `mika` command and PATH if
+they've been broken.
 
-New archives are HTTPS/checksum-verified and staged before replacement. Failed
-updates restore the previous app; failed recovery preserves its files. Concurrent
-maintenance is rejected. No background updater or runtime update check is installed.
-Formatting and VAD data are bundled and replaced with the app.
+If the installed version already matches and starts fine, the installer leaves it
+alone. It doesn't check every file, so if something seems broken, force a reinstall
+with `MIKA_REINSTALL=1`.
 
-| Variable | Purpose |
+Downloads are checked against a SHA-256 checksum and set up beside the existing app
+before replacing it. If an update fails, your previous version is restored. If that
+also fails, its files are kept so nothing is lost. Two installs can't run at once.
+Nothing updates in the background, and Mika never checks for updates when you run it.
+The formatting and speech-detection data ship with the app and update along with it.
+
+| Variable | What it does |
 | --- | --- |
-| `MIKA_VERSION` | Select a release tag, such as `v0.3.2`, instead of latest. |
-| `MIKA_REINSTALL=1` | Force app reinstallation, retaining the speech model. |
-| `MIKA_ARCHIVE_PATH` | Use a local platform archive and adjacent `.sha256`. |
+| `MIKA_VERSION` | Install a specific release, like `v0.3.2`, instead of the latest. |
+| `MIKA_REINSTALL=1` | Reinstall the app even if it looks up to date. Keeps the model. |
+| `MIKA_ARCHIVE_PATH` | Install from a local archive. Its `.sha256` file must sit next to it. |
 
-For shell installers, put options on `bash`, for example:
+With the shell installers, put the variable just before `bash`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/install-macos.sh | MIKA_REINSTALL=1 bash
 ```
 
-Use `install.sh` instead for Linux. In PowerShell, set the environment variable
-before invoking the installer and remove it afterward:
+(Use `install.sh` on Linux.) In PowerShell, set it, run the installer, then clear it:
 
 ```powershell
 $env:MIKA_REINSTALL = '1'
@@ -76,85 +100,102 @@ irm https://raw.githubusercontent.com/nochinsky/mika/main/install.ps1 | iex
 Remove-Item Env:MIKA_REINSTALL
 ```
 
-Inspect scripts before running them if desired. Adjacent checksums detect
-corruption, not a compromised publisher. Mac releases are ad-hoc signed, not
-notarized. No installer opens a microphone, downloads Granite without first-run
-consent, changes global PowerShell execution policy or disables OS security.
+You're welcome to read the scripts before running them. Note that the checksum
+catches a corrupted download. It can't protect you if the release itself was
+tampered with. The Mac builds are ad-hoc signed, not notarized.
 
-## Installation paths
+The installers never open your microphone, never download the speech model without
+asking first, never change your PowerShell execution policy, and never turn off
+OS security features.
 
-| Platform | Application | Speech model cache |
+## Where things are installed
+
+| Platform | App | Speech model |
 | --- | --- | --- |
-| Mac | `~/Library/Application Support/Mika/app` | Same parent, `models/` |
-| Linux | `${XDG_DATA_HOME:-$HOME/.local/share}/mika/app` | Same parent, `models/` |
+| Mac | `~/Library/Application Support/Mika/app` | `~/Library/Application Support/Mika/models` |
+| Linux | `${XDG_DATA_HOME:-$HOME/.local/share}/mika/app` | `…/mika/models` (same parent) |
 | Windows | `%LOCALAPPDATA%\Mika\app` | `%LOCALAPPDATA%\Mika\models` |
 
-Mac/Linux create `~/.local/bin/mika` and managed shell PATH configuration. Relative
-or empty Linux `XDG_DATA_HOME` falls back to `~/.local/share`; Mac does not use it.
-Windows adds the app's `bin` directory to user PATH. Restart other terminals after
-PATH changes. Use the same XDG/Zsh configuration environment for installation and
-removal; scripts do not search arbitrary locations.
+On Mac and Linux the installer creates `~/.local/bin/mika` and adds it to your
+shell's PATH. On Windows it adds the app's `bin` folder to your user PATH. Open a
+new terminal after installing so the change takes effect.
+
+On Linux, an empty or relative `XDG_DATA_HOME` is ignored and `~/.local/share` is
+used instead. The Mac ignores `XDG_DATA_HOME`. Run install and uninstall with the
+same XDG and Zsh settings so the uninstaller finds what the installer created. It
+only looks in those locations.
 
 ## Uninstalling
 
-Use the [README's platform command](../README.md#uninstall). Removal asks once;
-Enter/default cancels. Shell scripts read confirmation from the controlling
-terminal, not piped stdin. Set `MIKA_KEEP_MODEL=1` to keep downloaded Granite weights:
+Use the [uninstall command for your platform](../README.md#uninstall). It asks once
+before deleting anything. The default answer is no, so just pressing Enter cancels.
+The shell scripts read your answer from the terminal, so piping `yes` into them won't work.
+
+To keep the downloaded speech model, set `MIKA_KEEP_MODEL=1`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nochinsky/mika/main/uninstall-macos.sh | MIKA_KEEP_MODEL=1 bash
 ```
 
-Use `uninstall.sh` for Linux. In PowerShell, set `$env:MIKA_KEEP_MODEL = '1'`, run
-`uninstall.ps1`, then remove that environment variable. `MIKA_UNINSTALL_YES=1`
-explicitly permits unattended removal; both variables accept only `0` or `1`.
-Local shell scripts also accept `--keep-model --yes`; PowerShell uses `-KeepModel -Yes`.
+(Use `uninstall.sh` on Linux.) In PowerShell, set `$env:MIKA_KEEP_MODEL = '1'`, run
+`uninstall.ps1`, then clear the variable.
 
-Removal deletes the installer-managed app, fixed model/partial downloads and
-matching command/PATH setup. Ownership markers are required. Shared directories,
-unrelated data, customized/linked shell configuration and recovery files are
-preserved. Files outside the app are not removed; move personal files out of the
-managed app before uninstalling. Source/manual installations are not managed.
+To uninstall without the prompt, for example in a script, set `MIKA_UNINSTALL_YES=1`.
+Both variables accept only `0` or `1`. If you've downloaded the scripts locally,
+you can use `--keep-model --yes` instead, or `-KeepModel -Yes` in PowerShell.
 
-If interrupted, close Mika, correct the reported problem and rerun. Removal is not
-one atomic filesystem/PATH transaction. Do not bypass missing ownership markers;
-inspect the reported location manually. Mac maintenance-lock recovery is described
-[in its guide](macos.md#installation-layout-and-recovery).
+**What gets removed:** the app, the speech model (plus any half-finished downloads),
+and the `mika` command and PATH entries the installer added.
+
+**What's left alone:** shared folders, anything Mika didn't create, shell config
+you've customized or symlinked, and recovery files. Mika only deletes folders that
+carry its own ownership marker. If you've saved personal files inside the app
+folder, move them out first. Builds from source or manual copies aren't managed
+by the uninstaller.
+
+If removal gets interrupted, close Mika, fix whatever it reported, and run it again.
+It can't undo half a removal in one go. If it complains about a missing ownership
+marker, don't work around it. Look at the folder it names and decide for yourself.
+On a Mac, a leftover maintenance lock is covered in the
+[Mac guide](macos.md#installation-layout-and-recovery).
 
 ## Models and privacy
 
-The fixed recognizer is **Granite Speech 5.0 470M TurboCTC Q4_K_M**, the Apache-2.0
-variant, not `-nc`. Exact size, revision and SHA-256 are in
-[`src/model.h`](../src/model.h); bundled Silero identities are in
-[`src/speech_asset.h`](../src/speech_asset.h). Every dictation launch verifies their
-complete sizes/checksums. Formatting data is verified when used.
+Speech recognition uses **Granite Speech 5.0 470M TurboCTC Q4_K_M**, the Apache-2.0
+licensed version (not the non-commercial `-nc` one). Its exact size, revision and
+SHA-256 are in [`src/model.h`](../src/model.h). The bundled Silero speech detector
+is pinned in [`src/speech_asset.h`](../src/speech_asset.h). Mika checks both against
+their size and checksum every time it starts. The formatting data is checked when
+it's loaded.
 
-The initial Granite download requires consent, HTTPS/certificate validation,
-bounded transfer and verified atomic replacement. Failed transfers are discarded;
-a forcibly killed download can leave `.part.*` files. Remove them only when no
-download is running. `.download.lock` may remain for coordination. `CURL_CA_BUNDLE`
-can select a trusted corporate/private PEM bundle without disabling verification.
+The model download only starts after you agree. It uses HTTPS with certificate
+checks, has a size limit, and is verified before being moved into place. A failed
+download is thrown away. If the process is killed mid-download, `.part.*` files may
+be left behind. You can delete them once no download is running. A `.download.lock`
+file may also stick around. That's normal. If you're behind a corporate proxy with
+its own certificates, point `CURL_CA_BUNDLE` at your PEM bundle. Verification stays on.
 
-Audio stays in memory. The five-minute float buffer is bounded at 19.2 MB;
-model/inference memory is larger and grows with recording length. Transcription
-starts after capture stops. There is no saved-audio runtime mode, upload or telemetry.
-Developer recording tools require separate explicit consent.
+Your audio is kept in memory only. Five minutes of audio takes at most 19.2 MB.
+The model itself uses more, and that grows with longer recordings. Transcription
+starts after you stop recording. Mika has no mode that saves audio, and it never
+uploads anything or sends telemetry. The developer recording tools in `scripts/`
+are separate and ask for their own permission.
 
-## Scripting contract
+## Using Mika in scripts
 
-| Exit | Meaning | stdout |
+| Exit code | Meaning | stdout |
 | --- | --- | --- |
-| **0** | Transcript, safe raw fallback, help or version | Requested text |
-| **1** | Operational/integrity failure | Empty during dictation |
-| **2** | Invalid arguments | Empty |
-| **3** | No detected speech or empty recognition | Empty |
-| **130** | Cancellation or declined model download | Empty |
+| **0** | Got a transcript (possibly unformatted), or printed help/version | The text |
+| **1** | Something went wrong | Empty |
+| **2** | Bad arguments | Empty |
+| **3** | No speech detected, or nothing recognized | Empty |
+| **130** | Cancelled, or you declined the model download | Empty |
 
-A formatting fallback remains success. Since v0.3.2, detected
-terminal read failures return 1 rather than cancellation, and broken pipes do not
-bypass terminal cleanup. Failed transcript writes return 1. Check the exit status,
-not just output bytes: an output-device failure can occur after writing begins.
-For example:
+If formatting fails but transcription worked, that's still exit 0. You just get
+the raw text. Since v0.3.2, losing the terminal returns 1 rather than 130, and a
+closed pipe no longer leaves your terminal in a weird state. If writing the
+transcript fails, you get exit 1. Some text may already have been written by then,
+so check the exit code rather than whether you got output:
 
 ```sh
 if text="$(mika)"; then
@@ -162,5 +203,5 @@ if text="$(mika)"; then
 fi
 ```
 
-Mika never executes or submits dictated instructions. Exit 0 is not a confidence
-score or approval for unattended execution.
+Mika never runs anything you say. A zero exit code means "here's some text", not
+"this is safe to execute".

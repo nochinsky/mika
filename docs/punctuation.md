@@ -114,6 +114,9 @@ weights; no retraining occurred.
 CPU ONNX Runtime **1.28.2** is MIT with third-party notices, from pinned
 sherpa-onnx **v1.13.8** no-TTS SDK binaries. No Sherpa inference library is deployed.
 [Runtime source](https://github.com/microsoft/onnxruntime/tree/v1.28.2).
+Its C/C++ headers, license and third-party notices are extracted from the official
+`Microsoft.ML.OnnxRuntime` 1.28.0 NuGet package; with line endings normalized they
+match the previously pinned 1.28.2 files byte for byte, and the same hashes are checked.
 SentencePiece **v0.2.1**, commit
 [31646a467d2051eb904e0b45de3a73e91fe1c1e3](https://github.com/google/sentencepiece/tree/31646a467d2051eb904e0b45de3a73e91fe1c1e3),
 is statically built unmodified with internal dependencies. Preserve its Apache-2.0

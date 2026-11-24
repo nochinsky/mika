@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 import urllib.request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -144,10 +145,47 @@ class Preparation(unittest.TestCase):
             member = tarfile.TarInfo('sherpa-onnx-v' + fetcher.VERSION + '-' + variant + '/lib/libonnxruntime.so')
             member.size = 7
             output.addfile(member, io.BytesIO(b'runtime'))
+        # A miniature onnxruntime NuGet package with Windows line endings.
+        self.package = self.root / 'onnxruntime.nupkg'
+        text = {'LICENSE': b'license\r\ntext\r\n', 'ThirdPartyNotices.txt': b'notices\r\n',
+                'build/native/include/onnxruntime_c_api.h': b'#pragma once\r\n'}
+        with zipfile.ZipFile(self.package, 'w') as output:
+            for member, data in text.items():
+                output.writestr(member, data)
+        def pin(member):
+            data = text[member].replace(b'\r\n', b'\n')
+            return len(data), hashlib.sha256(data).hexdigest()
+        patch.object(fetcher, 'ORT_NOTICES', {'onnxruntime-LICENSE.txt': ('LICENSE', *pin('LICENSE')),
+                     'onnxruntime-ThirdPartyNotices.txt': ('ThirdPartyNotices.txt', *pin('ThirdPartyNotices.txt'))}).start()
+        patch.object(fetcher, 'HEADERS', {'onnxruntime_c_api.h': pin('build/native/include/onnxruntime_c_api.h')}).start()
         self.quantizer = patch.object(fetcher, 'quantized_model', return_value=self.asset).start()
-        self.network = patch.object(fetcher, 'fetch', side_effect=lambda cache, name, spec:
-                                    self.archive if name.endswith('.tar.bz2') else self.asset).start()
+        def network(cache, name, spec):
+            if name.endswith('.tar.bz2'):
+                return self.archive
+            return self.package if name.endswith('.nupkg') else self.asset
+        self.network = patch.object(fetcher, 'fetch', side_effect=network).start()
         self.addCleanup(patch.stopall)
+
+    def test_onnxruntime_files_come_from_package_with_lf_endings(self):
+        fetcher.prepare(self.stage, 'linux')
+        self.assertEqual((self.payload / 'licenses/onnxruntime-LICENSE.txt').read_bytes(), b'license\ntext\n')
+        self.assertEqual((self.payload / 'licenses/onnxruntime-ThirdPartyNotices.txt').read_bytes(), b'notices\n')
+        self.assertEqual((self.stage / 'include/onnxruntime_c_api.h').read_bytes(), b'#pragma once\n')
+
+    def test_verified_onnxruntime_files_skip_the_package_download(self):
+        fetcher.prepare(self.stage, 'linux')
+        self.network.reset_mock()
+        fetcher.prepare(self.stage, 'linux')
+        self.assertNotIn('onnxruntime.nupkg', [call.args[1] for call in self.network.call_args_list])
+
+    def test_changed_onnxruntime_member_is_rejected(self):
+        with zipfile.ZipFile(self.package, 'w') as output:
+            for member in ('LICENSE', 'ThirdPartyNotices.txt', 'build/native/include/onnxruntime_c_api.h'):
+                output.writestr(member, b'tampered\r\n')
+        with self.assertRaisesRegex(ValueError, 'mismatch'):
+            fetcher.prepare(self.stage, 'linux')
+        self.assertEqual((self.payload / 'old-marker').read_bytes(), b'previous payload')
+        self.assertFalse(list((self.stage / 'downloads/onnxruntime').iterdir()))
 
     def test_complete_payload_replaces_previous_only_after_preparation(self):
         fetcher.prepare(self.stage, 'linux')

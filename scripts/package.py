@@ -6,7 +6,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
-from fetch_punctuation import ARTIFACTS
+from fetch_punctuation import NOTICE_FILES
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--stage', type=Path, required=True)
@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory() as temporary:
         raise SystemExit('Incomplete, linked or unexpected files in formatting payload')
     # Use the pinned preparation inventory, without fetching or converting.
     # Legal/provenance text is mandatory; a .txt extension is not a safe allowlist.
-    required_notices = (set(ARTIFACTS) - {'sp.model'}) | {'fullstop-LICENSE.txt', 'fullstop-NOTICE.txt'}
+    required_notices = NOTICE_FILES
     if ({item.name for item in notices.iterdir()} != required_notices or
             any(not payload_file(item) for item in notices.iterdir())):
         raise SystemExit('Missing, empty, linked or unexpected formatting notices')

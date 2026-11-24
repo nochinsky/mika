@@ -9,13 +9,17 @@ from pathlib import Path
 import shutil
 import tarfile
 import tempfile
+import zipfile
 from asset_io import fetch, payload_transaction, run_bounded, verified
 from quantize_punctuation import convert
 
 VERSION = '1.13.8'  # Only the ORT binaries are used from this CPU/no-TTS SDK.
 RAW = 'https://raw.githubusercontent.com/'
 MODEL = 'https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/b26fd1c40e88678859048898218ea4edcc24c84a/'
-ORT = RAW + 'microsoft/onnxruntime/v1.28.2/'
+# The upstream v1.28.2 git tag stopped resolving. NuGet packages are immutable,
+# and the 1.28.0 package carries byte-identical files once CRLF is normalized.
+ORT_PACKAGE = ('https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.28.0/microsoft.ml.onnxruntime.1.28.0.nupkg',
+               139145017, '769d1d3ea8ab6cd69f737c9dd4d4462aa4ad0ccfa106eaf506efc40d7bead5db')
 SP = RAW + 'google/sentencepiece/31646a467d2051eb904e0b45de3a73e91fe1c1e3/'
 SOURCE_MODEL = (MODEL + 'punct_cap_seg_en.onnx', 209532928, 'dd922d459da618cd324280889740608b76fb3e9e61d3f402291be1251f91421b')
 QUANTIZED = (52883510, 'd69b2df2db21c177b8ea9086e2324796176fb5a28fa8893f9df11b79bf3fc3ec')
@@ -23,13 +27,16 @@ ARTIFACTS = {
     'sp.model': (MODEL + 'spe_32k_lc_en.model', 587902, '9e86d0263de80b3b68327a21f5350c8cdf846e4c4400253c9baf05e3d44871c3'),
     'fullstop-model-card.md': (MODEL + 'README.md', 16830, '47e853ebf1ed795445914383e165ad37cac94156bebe2e723865b721ace80831'),
     'fullstop-config.yaml': (MODEL + 'config.yaml', 302, '002ea72d7ef44a6d547b9ca251d6201c20bcf1e0d02e8bb2890141d92b8bfc8e'),
-    'onnxruntime-LICENSE.txt': (ORT + 'LICENSE', 1073, '2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c'),
-    'onnxruntime-ThirdPartyNotices.txt': (ORT + 'ThirdPartyNotices.txt', 325054, '0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2'),
     'sentencepiece-LICENSE.txt': (SP + 'LICENSE', 11358, 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'),
     'sentencepiece-protobuf-LICENSE.txt': (SP + 'third_party/protobuf-lite/LICENSE', 1732, '6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d'),
     'sentencepiece-absl-LICENSE.txt': (SP + 'third_party/absl/LICENSE', 11365, 'd3e2f59e1d71176dfdb555ece6a41f7a5aa0f52ff21211010ace314f57695f6b'),
     'sentencepiece-darts-LICENSE.txt': (SP + 'third_party/darts_clone/LICENSE', 1481, '155f59997298ee336602c49f9c1110f268ac394ca2197eb02647a3555935ad52'),
     'sentencepiece-esaxx-LICENSE.txt': (SP + 'third_party/esaxx/LICENSE', 1112, '7c28553d1d3312d65fe309f76a22ebaf33a3d76c8c1e3b98a88ee4654ecb53db'),
+}
+# Members of ORT_PACKAGE: published name -> (package path, LF size, LF SHA-256).
+ORT_NOTICES = {
+    'onnxruntime-LICENSE.txt': ('LICENSE', 1073, '2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c'),
+    'onnxruntime-ThirdPartyNotices.txt': ('ThirdPartyNotices.txt', 325054, '0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2'),
 }
 HEADERS = {
     'onnxruntime_c_api.h': (394991, 'b69a133143c0da61782b2b02cc8a620d21ac139231fd211719776d10385135c1'),
@@ -44,7 +51,37 @@ SDK = {
     'linux': ('linux-x64-shared-no-tts-lib', 9249201, 'bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b', ['libonnxruntime.so']),
     'windows': ('win-x64-shared-MT-Release-no-tts-lib', 7536080, 'a1253e665c4f236119c443c8932a8acfca32a546c78c05962d483c9a0eae21b7', ['onnxruntime.dll', 'onnxruntime_providers_shared.dll', 'onnxruntime.lib']),
 }
+NOTICE_FILES = (set(ARTIFACTS) - {'sp.model'}) | set(ORT_NOTICES) | {'fullstop-LICENSE.txt', 'fullstop-NOTICE.txt'}
 PREPARE_TIMEOUT = 900  # Covers all downloads, verified conversion and publication.
+
+
+def ort_files(cache):
+    """Verified onnxruntime notices and headers, extracted from the pinned package."""
+    members = dict(ORT_NOTICES)
+    members.update({name: ('build/native/include/' + name, size, digest) for name, (size, digest) in HEADERS.items()})
+    directory = cache / 'onnxruntime'
+    directory.mkdir(parents=True, exist_ok=True)
+    paths = {name: directory / name for name in members}
+    if all(verified(paths[name], size, digest) for name, (_, size, digest) in members.items()):
+        return paths
+    package = fetch(cache, 'onnxruntime.nupkg', ORT_PACKAGE)
+    with zipfile.ZipFile(package) as bundle:
+        for name, (member, size, digest) in members.items():
+            info = bundle.getinfo(member)
+            # CRLF can at most double the size; refuse anything larger before reading.
+            if info.is_dir() or info.file_size > 2 * size:
+                raise ValueError('Invalid onnxruntime package member: ' + member)
+            data = bundle.read(info).replace(b'\r\n', b'\n')
+            with tempfile.NamedTemporaryFile(dir=directory, delete=False) as output:
+                temporary = Path(output.name)
+                output.write(data)
+            try:
+                if not verified(temporary, size, digest):
+                    raise ValueError('onnxruntime size/SHA-256 mismatch: ' + member)
+                os.replace(temporary, paths[name])
+            finally:
+                temporary.unlink(missing_ok=True)
+    return paths
 
 
 def quantized_model(cache):
@@ -80,9 +117,8 @@ def prepare(stage, platform):
         shutil.copyfile(payload / 'licenses/sentencepiece-LICENSE.txt', payload / 'licenses/fullstop-LICENSE.txt')
         shutil.copyfile(Path(__file__).resolve().parents[1] / 'licenses/fullstop-NOTICE.txt',
                         payload / 'licenses/fullstop-NOTICE.txt')
-        for name, (size, digest) in HEADERS.items():
-            url = ORT + 'include/onnxruntime/core/session/' + name
-            shutil.copyfile(fetch(cache, name, (url, size, digest)), include / name)
+        for name, path in ort_files(cache).items():
+            shutil.copyfile(path, payload / 'licenses' / name if name in ORT_NOTICES else include / name)
         variant, size, digest, libraries = SDK[platform]
         root = 'sherpa-onnx-v' + VERSION + '-' + variant
         name = root + '.tar.bz2'
